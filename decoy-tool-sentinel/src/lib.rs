@@ -1,4 +1,4 @@
-// Copyright 2026 Salesforce, Inc. All rights reserved.
+// Copyright (c) 2026 msaleme. Licensed under the MIT License.
 //
 // Decoy Tool Sentinel — a decoy MCP tool no honest agent should ever call.
 //

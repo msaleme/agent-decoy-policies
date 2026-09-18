@@ -1,4 +1,4 @@
-// Copyright 2026 Salesforce, Inc. All rights reserved.
+// Copyright (c) 2026 msaleme. Licensed under the MIT License.
 //
 // MCP Honeytoken Tripwire — a decoy tripwire for agent traffic.
 //

@@ -94,3 +94,24 @@ agent-decoy-policies/
 Each project keeps the standard PDK structure: `definition/gcl.yaml` (config schema),
 `src/lib.rs` (filter logic), `src/generated/` (auto-generated from the schema — do not hand-edit),
 `tests/`, `playground/` (local Docker Flex Gateway), and `AGENTS.md` (PDK guidance).
+
+## References
+
+The design of each policy is anchored to public guidance. Every control cited in the tables above is
+traceable to one of these documents:
+
+- **CISA**, *Using Cyber Decoys to Strengthen Detection and Response*, TLP:CLEAR, September 2026 — the
+  Expose / Affect / Elicit taxonomy and the honeytoken, decoy-tool, and breadcrumb primitives this family
+  implements.
+  <https://www.cisa.gov/sites/default/files/2026-09/using-cyber-decoys-to-strengthen-detection-and-response_508c.pdf>
+- **NIST SP 800-53 Rev. 5**, *Security and Privacy Controls for Information Systems and Organizations*,
+  Sept 2020 (updates through Dec 2020) — controls **SC-26** (Decoys), **SC-30** (Concealment &
+  Misdirection), **SI-4** (System Monitoring), **SI-20** (Tainting).
+  DOI: [10.6028/NIST.SP.800-53r5](https://doi.org/10.6028/NIST.SP.800-53r5)
+- **NIST SP 800-160 Vol. 2 Rev. 1**, *Developing Cyber-Resilient Systems: A Systems Security Engineering
+  Approach*, Dec 2021 — the cyber-resiliency techniques **Deception** (Obfuscation / Disinformation /
+  Misdirection / Tainting) and **Analytic Monitoring**.
+  DOI: [10.6028/NIST.SP.800-160v2r1](https://doi.org/10.6028/NIST.SP.800-160v2r1)
+- **OWASP Top 10 for LLM Applications (2025)**, **LLM06: Excessive Agency** — a hijacked agent reaching
+  for data or tools it should never touch, which these decoys are designed to surface.
+  <https://genai.owasp.org/llm-top-10/>

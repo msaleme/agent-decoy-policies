@@ -1,4 +1,4 @@
-# Copyright 2026 Salesforce, Inc. All rights reserved.
+# Copyright (c) 2026 msaleme. Licensed under the MIT License.
 [package]
 name = "breadcrumb_misdirection"
 version = "1.0.0"
