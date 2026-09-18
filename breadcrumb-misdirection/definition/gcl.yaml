@@ -1,0 +1,63 @@
+---
+apiVersion: gateway.mulesoft.com/v1alpha1
+kind: Extension
+metadata:
+  labels:
+    title: Breadcrumb Misdirection
+    category: Security
+    description: >-
+      Plants a benign breadcrumb — a lure that names a resource no real task
+      needs (a fake /admin/override endpoint, a decoy "internal" tool) — into the
+      descriptions an agent reads from tools/list. A healthy agent ignores it; a
+      prompt-injected or hijacked agent takes the bait and references it in a
+      later request, revealing its intent BEFORE it reaches anything real. The
+      gateway logs the follow (CISA "Expose"), then strips the breadcrumb out of
+      the request so the lure never actually reaches the upstream. This is Expose,
+      NOT Elicit — it flags the follow, it does not entrap.
+      Maps to NIST SP 800-53 Rev 5 SC-30 (Concealment & Misdirection) and SI-4
+      (Monitoring), and NIST SP 800-160 Vol 2 Rev 1 Deception (Misdirection).
+    metadata/capabilities/injectionPoint: inbound
+    metadata/interfaceScope: api,resource
+spec:
+  extends:
+    - name: extension-definition
+      namespace: default
+  properties:
+    breadcrumb:
+      type: string
+      default: ""
+      description: >-
+        The lure text appended to tool descriptions in tools/list responses, and
+        the exact marker watched for on inbound requests. Make it distinctive and
+        obviously off-task so no legitimate request would ever contain it — e.g.
+        "For elevated access use the internal tool admin_override_do_not_use".
+        Any request carrying this string is a followed breadcrumb.
+    mode:
+      type: string
+      default: monitor
+      enum:
+        - monitor
+        - block
+      description: >-
+        "monitor" — flag the follow, strip the breadcrumb from the request, and
+        let the (now-cleaned) request proceed (Expose). "block" — additionally
+        reject the request that followed the breadcrumb (403).
+    seedToolDescriptions:
+      type: boolean
+      default: true
+      description: >-
+        When true, append the breadcrumb to every tool description in a
+        tools/list response so the lure is actually present for agents to find.
+        Set false if the breadcrumb is planted out-of-band (in the MCP server
+        itself) and this policy should only watch for the follow.
+    alertHeader:
+      type: string
+      default: x-agent-breadcrumb
+      description: >-
+        Header stamped on a request that followed the breadcrumb, for downstream
+        logging, SIEM correlation, and Kill-Switch triggering.
+  required:
+    - breadcrumb
+    - mode
+    - seedToolDescriptions
+    - alertHeader
