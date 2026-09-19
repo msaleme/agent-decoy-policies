@@ -1,11 +1,10 @@
 # Agent Decoy Policies
 
 A family of **MuleSoft Flex/Omni Gateway custom policies** (PDK, Rust → WebAssembly) that bring
-**cyber-deception** to agent and MCP traffic. You plant decoys — data, tools, and lures that have **no
-legitimate use** — so that a single interaction with one is a high-fidelity, near-zero-noise signal that
-an agent has been hijacked, poisoned, or is exfiltrating. The gateway is the natural place to do this:
-it already sits in front of every model, tool, and MCP server, so it can both **plant** the decoy and
-**watch** every request and response for a touch.
+**cyber-deception** to selected agent and MCP message bodies. Operators choose decoys that are
+meaningful in their own environment; this repository does not establish that a particular value has no
+legitimate use or that a match alone proves compromise. The gateway is a useful enforcement point, but
+deployment needs an operator-defined response and false-positive review path.
 
 Inspired by CISA's *[Using Cyber Decoys to Strengthen Detection and Response](https://www.cisa.gov/sites/default/files/2026-09/using-cyber-decoys-to-strengthen-detection-and-response_508c.pdf)*
 (TLP:CLEAR, 2026) and grounded in NIST controls. These policies stay firmly in CISA's **Expose**
@@ -16,25 +15,35 @@ an advanced technique with legal risk that does not belong in a general-purpose 
 ## Why deception at the gateway
 
 Traditional detection asks "does this request look malicious?" — a noisy, model-dependent judgement.
-A decoy inverts the question: nothing legitimate ever touches it, so **any** touch is the alert. That
-gives you a signal with almost no false positives, which is exactly what an autonomous, high-volume
-agent fabric needs. The three primitives below map one-to-one to CISA's decoy taxonomy.
+A well-chosen decoy can make unauthorized interaction a useful, high-signal investigation input. Its actual
+false-positive rate depends on the local decoy design, traffic, and operating response. The three primitives
+below map one-to-one to CISA's decoy taxonomy.
+
+## Current validation and support boundary
+
+The source has Rust unit tests and WebAssembly release-build evidence. The generated Docker/Flex request
+fixtures are currently under repair: they do not yet provide passing policy-behavior integration evidence.
+Accordingly, this repository makes **no production-effectiveness, interoperability, or fail-closed claim**
+for a Flex deployment. Treat these projects as implementation prototypes until the policy-specific Flex
+test matrix is passing and published.
+
+The current implementations process decoded bodies made available to the filter. They do not claim
+coverage for SSE or other streaming bodies, compressed or non-UTF-8 content, oversized bodies, URL paths,
+query strings, or request/response headers unless a policy's source and a passing behavior test explicitly
+say otherwise.
 
 ## The policies
 
 | Policy | CISA primitive | What it does | NIST controls |
 |---|---|---|---|
-| [`mcp-honeytoken-tripwire`](./mcp-honeytoken-tripwire) | Honeytoken | Watches every request/response for a planted decoy value (fake credential, record, URL). Flags on any reference; in block mode refuses the request and strips the token from responses so the decoy never leaves. | SC-26 (Decoys), SI-20 (Tainting), SI-4 |
-| [`decoy-tool-sentinel`](./decoy-tool-sentinel) | Decoy tool | Watches MCP `tools/call` for a decoy tool no honest agent should ever invoke (e.g. `dump_all_records`). Any call is unambiguous; block mode rejects it with a JSON-RPC error so it never executes. | SC-26 (Decoys), SC-30 (Concealment & Misdirection), SI-4 |
-| [`breadcrumb-misdirection`](./breadcrumb-misdirection) | Breadcrumb | Plants a lure into `tools/list` descriptions, logs any agent that follows it, and strips the lure from the request before it reaches a real upstream. Expose-not-Elicit. | SC-30 (Concealment & Misdirection), SI-4 |
+| [`mcp-honeytoken-tripwire`](./mcp-honeytoken-tripwire) | Honeytoken | Prototype for detecting configured values in decoded request/response bodies. Its current source and tests define the behavior; Flex request/response behavior is not yet integration-validated. | SC-26 (Decoys), SI-20 (Tainting), SI-4 |
+| [`decoy-tool-sentinel`](./decoy-tool-sentinel) | Decoy tool | Prototype for inspecting top-level JSON-RPC `tools/call` objects. JSON-RPC batch arrays are currently unsupported and must not be relied on for blocking until issue #8 is resolved. | SC-26 (Decoys), SC-30 (Concealment & Misdirection), SI-4 |
+| [`breadcrumb-misdirection`](./breadcrumb-misdirection) | Breadcrumb | Prototype for JSON tool-list/body transformations. Streaming/SSE and production response-rewrite semantics are outside the currently validated scope. | SC-30 (Concealment & Misdirection), SI-4 |
 
-All three:
-- run **inbound** on any API/MCP instance the gateway fronts;
-- support `monitor` (Expose — flag only) and `block` (Affect) modes;
-- emit a **structured anomaly** to the gateway log (`logger::warn`), which Message Logging / SSE Logging
-  and any SIEM forwarder pick up, and stamp a configurable **alert header** that a Kill Switch or
-  downstream policy can key off;
-- are self-contained Rust with no outbound network calls (no fail-open/closed ambiguity).
+All three are self-contained Rust implementations with no intentional outbound network calls. Their
+configuration modes, logging, and headers are source-level features; operators should verify their
+gateway logging/SIEM and downstream-enforcement integration in their own environment. The presence of a
+decoy match is an alerting input, not an automatically proven security verdict.
 
 ### NIST anchors
 
@@ -49,7 +58,7 @@ never touch).
 
 ## Build & test
 
-Each policy is an independent PDK project. Requirements: Rust (stable) with the `wasm32-wasip1` target,
+Each policy is an independent PDK project. Requirements: Rust **1.89.0** with the `wasm32-wasip1` target,
 and — only for regenerating asset files or publishing — `anypoint-cli-v4` with the PDK plugin plus
 `cargo-anypoint` (`make setup`).
 
@@ -86,9 +95,9 @@ governance, delegation-depth limiting, semantic cache) — none of which plant d
 
 ```
 agent-decoy-policies/
-├── mcp-honeytoken-tripwire/     # honeytoken tripwire (fully implemented + tested)
-├── decoy-tool-sentinel/         # decoy MCP tool sentinel (fully implemented + tested)
-└── breadcrumb-misdirection/     # breadcrumb lure + strip (fully implemented + tested)
+├── mcp-honeytoken-tripwire/     # honeytoken tripwire prototype
+├── decoy-tool-sentinel/         # decoy MCP tool sentinel prototype
+└── breadcrumb-misdirection/     # breadcrumb lure prototype
 ```
 
 Each project keeps the standard PDK structure: `definition/gcl.yaml` (config schema),
