@@ -21,13 +21,82 @@ use anyhow::{anyhow, Result};
 
 use pdk::hl::*;
 use pdk::logger;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::generated::config::Config;
 
 /// Marker substituted for a honeytoken when it is stripped out of a response in
 /// block mode, so the decoy value never leaves the gateway.
 const REDACTION_MARKER: &str = "[decoy-withheld]";
+
+/// JSON-RPC server-error code used when a policy prevents a request from
+/// reaching its upstream tool. It intentionally matches the Sentinel policy.
+const MCP_BLOCKED_CODE: i64 = -32008;
+
+/// The response shape to preserve when Honeytoken blocks a parseable JSON-RPC
+/// request. Non-JSON-RPC traffic intentionally remains on the generic policy
+/// response path below.
+struct ParsedJsonRpcRequest {
+    is_batch: bool,
+    response_ids: Vec<Value>,
+}
+
+fn parse_jsonrpc_request(body: &[u8]) -> Option<ParsedJsonRpcRequest> {
+    let root: Value = serde_json::from_slice(body).ok()?;
+    let is_batch = matches!(root, Value::Array(_));
+    let items: Vec<&Value> = match &root {
+        Value::Array(items) if !items.is_empty() => items.iter().collect(),
+        Value::Object(_) => vec![&root],
+        _ => return None,
+    };
+
+    if items.iter().any(|item| {
+        item.get("jsonrpc").and_then(Value::as_str) != Some("2.0")
+            || item.get("method").and_then(Value::as_str).is_none()
+    }) {
+        return None;
+    }
+
+    Some(ParsedJsonRpcRequest {
+        is_batch,
+        response_ids: items
+            .iter()
+            .filter_map(|item| item.get("id").cloned())
+            .collect(),
+    })
+}
+
+fn blocked_jsonrpc_response(parsed: ParsedJsonRpcRequest, alert_header: &str) -> Response {
+    if parsed.response_ids.is_empty() {
+        return Response::new(202).with_headers([(
+            alert_header.to_string(),
+            "fired;direction=request".to_string(),
+        )]);
+    }
+
+    let error = |id: Value| {
+        json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+                "code": MCP_BLOCKED_CODE,
+                "message": "request referenced a honeytoken decoy",
+            }
+        })
+    };
+    let body = if parsed.is_batch {
+        Value::Array(parsed.response_ids.into_iter().map(error).collect()).to_string()
+    } else {
+        error(parsed.response_ids.into_iter().next().expect("response ID exists")).to_string()
+    };
+
+    Response::new(200)
+        .with_headers([
+            ("Content-Type".to_string(), "application/json".to_string()),
+            (alert_header.to_string(), "fired;direction=request".to_string()),
+        ])
+        .with_body(body)
+}
 
 /// Compiled tripwire, built once at configuration time so the per-request path
 /// does no allocation beyond scanning the body it is handed.
@@ -197,20 +266,24 @@ async fn request_filter(request_state: RequestState, tripwire: &Tripwire) -> Flo
     handler.set_header(&tripwire.alert_header, "fired;direction=request");
 
     if tripwire.block {
-        Flow::Break(
-            Response::new(403)
-                .with_headers([
-                    ("Content-Type".to_string(), "application/json".to_string()),
-                    (tripwire.alert_header.clone(), "fired;direction=request".to_string()),
-                ])
-                .with_body(
-                    json!({
-                        "error": "request referenced a honeytoken decoy",
-                        "control": "NIST SC-26/SI-20",
-                    })
-                    .to_string(),
-                ),
-        )
+        if let Some(parsed) = parse_jsonrpc_request(&body) {
+            Flow::Break(blocked_jsonrpc_response(parsed, &tripwire.alert_header))
+        } else {
+            Flow::Break(
+                Response::new(403)
+                    .with_headers([
+                        ("Content-Type".to_string(), "application/json".to_string()),
+                        (tripwire.alert_header.clone(), "fired;direction=request".to_string()),
+                    ])
+                    .with_body(
+                        json!({
+                            "error": "request referenced a honeytoken decoy",
+                            "control": "NIST SC-26/SI-20",
+                        })
+                        .to_string(),
+                    ),
+            )
+        }
     } else {
         Flow::Continue(())
     }
@@ -285,7 +358,7 @@ mod test {
     use pdk_unit::{
         TraceBackend, UnitHttpMessage, UnitHttpRequest, UnitHttpResponse, UnitTestBuilder,
     };
-    use serde_json::json;
+    use serde_json::{json, Value};
     use std::rc::Rc;
 
     const DECOY: &str = "acct_DECOY_9x1f-do-not-use";
@@ -367,6 +440,92 @@ mod test {
             UnitHttpRequest::post().with_body(format!("{{\"lookup\":\"{DECOY}\"}}")),
         );
         assert_eq!(response.status_code(), 403);
+        let body: Value = serde_json::from_slice(&response.body()).expect("generic block body is JSON");
+        assert_eq!(body["error"], "request referenced a honeytoken decoy");
+        assert!(body.get("jsonrpc").is_none(), "non-MCP traffic retains the generic policy response");
+    }
+
+    #[test]
+    fn mcp_request_referencing_decoy_returns_in_band_jsonrpc_error() {
+        let mut tester = UnitTestBuilder::default()
+            .with_config(block_config())
+            .with_backend(clean_backend)
+            .with_entrypoint(super::configure);
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "tools/call",
+            "params": {"name": "lookup", "arguments": {"account": DECOY}}
+        })
+        .to_string();
+
+        let response = tester.request(UnitHttpRequest::post().with_body(request));
+        assert_eq!(response.status_code(), 200);
+        assert_eq!(response.header("content-type"), Some("application/json"));
+        let body: Value = serde_json::from_slice(&response.body()).expect("MCP block body is JSON");
+        assert_eq!(body, json!({
+            "jsonrpc": "2.0",
+            "id": 7,
+            "error": {"code": super::MCP_BLOCKED_CODE, "message": "request referenced a honeytoken decoy"}
+        }));
+    }
+
+    #[test]
+    fn mcp_notification_referencing_decoy_returns_202_without_body() {
+        let mut tester = UnitTestBuilder::default()
+            .with_config(block_config())
+            .with_backend(clean_backend)
+            .with_entrypoint(super::configure);
+        let notification = json!({
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {"name": "lookup", "arguments": {"account": DECOY}}
+        })
+        .to_string();
+
+        let response = tester.request(UnitHttpRequest::post().with_body(notification));
+        assert_eq!(response.status_code(), 202);
+        assert!(response.body().is_empty());
+    }
+
+    #[test]
+    fn mcp_batch_referencing_decoy_returns_one_error_per_request_id() {
+        let mut tester = UnitTestBuilder::default()
+            .with_config(block_config())
+            .with_backend(clean_backend)
+            .with_entrypoint(super::configure);
+        let batch = json!([
+            {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "lookup", "arguments": {}}},
+            {"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "lookup", "arguments": {"account": DECOY}}}
+        ])
+        .to_string();
+
+        let response = tester.request(UnitHttpRequest::post().with_body(batch));
+        assert_eq!(response.status_code(), 200);
+        let body: Value = serde_json::from_slice(&response.body()).expect("MCP batch block body is JSON");
+        assert_eq!(body, json!([
+            {"jsonrpc": "2.0", "id": 3, "error": {"code": super::MCP_BLOCKED_CODE, "message": "request referenced a honeytoken decoy"}},
+            {"jsonrpc": "2.0", "id": 9, "error": {"code": super::MCP_BLOCKED_CODE, "message": "request referenced a honeytoken decoy"}}
+        ]));
+    }
+
+    #[test]
+    fn mixed_invalid_batch_referencing_decoy_keeps_generic_block_response() {
+        let mut tester = UnitTestBuilder::default()
+            .with_config(block_config())
+            .with_backend(clean_backend)
+            .with_entrypoint(super::configure);
+        let batch = json!([
+            {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "lookup", "arguments": {}}},
+            {"id": 9, "method": "tools/call", "params": {"name": "lookup", "arguments": {"account": DECOY}}}
+        ])
+        .to_string();
+
+        let response = tester.request(UnitHttpRequest::post().with_body(batch));
+        assert_eq!(response.status_code(), 403);
+        let body: Value = serde_json::from_slice(&response.body()).expect("generic block body is JSON");
+        assert_eq!(body["error"], "request referenced a honeytoken decoy");
+        assert!(body.get("jsonrpc").is_none());
     }
 
     #[test]

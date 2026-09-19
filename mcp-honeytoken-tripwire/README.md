@@ -10,8 +10,7 @@ high-fidelity, near-zero-noise signal that an agent has been compromised or is e
 
 - **`monitor`** (Expose) — emit a structured anomaly to the gateway log and stamp the alert header;
   traffic continues. Safe to run everywhere.
-- **`block`** (Affect) — reject a **request** that references a honeytoken (403), and **strip** the token
-  out of any **response** body so the decoy can never actually leave the gateway.
+- **`block`** (Affect) — reject a **request** that references a honeytoken. For one complete JSON-RPC 2.0 request object, or a non-empty batch whose every member has `jsonrpc: "2.0"` and a string `method`, the policy returns an HTTP `200` JSON-RPC `-32008` error preserving request IDs; notification-only input returns HTTP `202` with no body. Non-JSON-RPC, malformed, and mixed-invalid traffic retains the explicit generic HTTP `403` policy response. In all cases, a honeytoken in a **response** body is stripped so the decoy can never actually leave the gateway.
 
 ### Configuration
 
