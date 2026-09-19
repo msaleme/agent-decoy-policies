@@ -37,6 +37,12 @@ struct Sentinel {
     alert_header: String,
 }
 
+struct ParsedCalls {
+    is_batch: bool,
+    calls: Vec<String>,
+    response_ids: Vec<Value>,
+}
+
 impl Sentinel {
     fn from_config(config: &Config) -> Self {
         Self {
@@ -51,24 +57,48 @@ impl Sentinel {
         }
     }
 
-    /// Extracts the tool name from an MCP `tools/call` request, if this body is
-    /// one. Returns `None` for any other method or a non-JSON-RPC body — the
-    /// sentinel only fires on an actual tool invocation, never on `tools/list`.
-    fn called_tool(body: &[u8]) -> Option<String> {
-        let value: Value = serde_json::from_slice(body).ok()?;
-        if value.get("method")?.as_str()? != "tools/call" {
-            return None;
-        }
-        Some(value.get("params")?.get("name")?.as_str()?.to_string())
-    }
+    /// Parses a JSON-RPC object or batch, preserving batch shape and request IDs
+    /// for protocol-valid block responses. Invalid JSON and non-calls have no
+    /// candidate calls or response IDs.
+    fn called_tools(body: &[u8]) -> ParsedCalls {
+        let root: Value = match serde_json::from_slice(body) {
+            Ok(value) => value,
+            Err(_) => {
+                return ParsedCalls {
+                    is_batch: false,
+                    calls: Vec::new(),
+                    response_ids: Vec::new(),
+                }
+            }
+        };
+        let is_batch = matches!(root, Value::Array(_));
+        let items: Vec<&Value> = match &root {
+            Value::Array(items) => items.iter().collect(),
+            _ => vec![&root],
+        };
+        let response_ids = items
+            .iter()
+            .filter_map(|value| value.get("id").cloned())
+            .collect();
+        let calls = items
+            .into_iter()
+            .filter_map(|value| {
+                if value.get("method")?.as_str()? != "tools/call" {
+                    return None;
+                }
+                value
+                    .get("params")?
+                    .get("name")?
+                    .as_str()
+                    .map(str::to_owned)
+            })
+            .collect();
 
-    /// The request's JSON-RPC id, echoed back in a block response so the client
-    /// can correlate the error. Defaults to null when absent.
-    fn rpc_id(body: &[u8]) -> Value {
-        serde_json::from_slice::<Value>(body)
-            .ok()
-            .and_then(|v| v.get("id").cloned())
-            .unwrap_or(Value::Null)
+        ParsedCalls {
+            is_batch,
+            calls,
+            response_ids,
+        }
     }
 }
 
@@ -101,38 +131,69 @@ async fn request_filter(request_state: RequestState, sentinel: &Sentinel) -> Flo
         return Flow::Continue(());
     }
 
-    let tool = match Sentinel::called_tool(&body) {
-        Some(t) => t,
+    let parsed = Sentinel::called_tools(&body);
+    let tool = match parsed
+        .calls
+        .iter()
+        .find(|tool| sentinel.decoy_tools.iter().any(|decoy| decoy == *tool))
+    {
+        Some(hit) => hit,
         None => return Flow::Continue(()),
     };
-    if !sentinel.decoy_tools.iter().any(|d| d == &tool) {
-        return Flow::Continue(());
-    }
 
     let action = if sentinel.block { "blocked" } else { "flagged" };
-    emit_anomaly(&tool, action);
+    emit_anomaly(tool, action);
     handler.set_header(&sentinel.alert_header, "fired");
 
     if sentinel.block {
-        let id = Sentinel::rpc_id(&body);
-        Flow::Break(
-            Response::new(403)
-                .with_headers([
-                    ("Content-Type".to_string(), "application/json".to_string()),
-                    (sentinel.alert_header.clone(), "fired".to_string()),
-                ])
-                .with_body(
+        if parsed.response_ids.is_empty() {
+            return Flow::Break(Response::new(204));
+        }
+
+        if parsed.is_batch {
+            let errors: Vec<Value> = parsed
+                .response_ids
+                .into_iter()
+                .map(|id| {
                     json!({
                         "jsonrpc": "2.0",
                         "id": id,
                         "error": {
                             "code": MCP_BLOCKED_CODE,
-                            "message": format!("decoy tool '{tool}' is not callable"),
+                            "message": format!("batch rejected because decoy tool '{tool}' is not callable"),
                         }
                     })
-                    .to_string(),
-                ),
-        )
+                })
+                .collect();
+            Flow::Break(
+                Response::new(403)
+                    .with_headers([
+                        ("Content-Type".to_string(), "application/json".to_string()),
+                        (sentinel.alert_header.clone(), "fired".to_string()),
+                    ])
+                    .with_body(Value::Array(errors).to_string()),
+            )
+        } else {
+            let id = parsed.response_ids.into_iter().next().unwrap();
+            Flow::Break(
+                Response::new(403)
+                    .with_headers([
+                        ("Content-Type".to_string(), "application/json".to_string()),
+                        (sentinel.alert_header.clone(), "fired".to_string()),
+                    ])
+                    .with_body(
+                        json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "error": {
+                                "code": MCP_BLOCKED_CODE,
+                                "message": format!("decoy tool '{tool}' is not callable"),
+                            }
+                        })
+                        .to_string(),
+                    ),
+            )
+        }
     } else {
         Flow::Continue(())
     }
@@ -165,7 +226,8 @@ mod test {
     use pdk_unit::{
         TraceBackend, UnitHttpMessage, UnitHttpRequest, UnitHttpResponse, UnitTestBuilder,
     };
-    use serde_json::json;
+    use super::MCP_BLOCKED_CODE;
+    use serde_json::{json, Value};
     use std::rc::Rc;
 
     const DECOY: &str = "dump_all_records";
@@ -239,6 +301,124 @@ mod test {
         let body = String::from_utf8_lossy(&response.body()).to_string();
         assert!(body.contains("-32008"), "expected JSON-RPC block error");
         assert!(body.contains(DECOY));
+    }
+
+    #[test]
+    fn decoy_call_in_jsonrpc_batch_is_blocked_in_block_mode() {
+        let mut tester = UnitTestBuilder::default()
+            .with_config(block_config())
+            .with_backend(ok_backend)
+            .with_entrypoint(super::configure);
+
+        let batch = json!([
+            {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "get_orders", "arguments": {}}},
+            {"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": DECOY, "arguments": {}}}
+        ])
+        .to_string();
+        let response = tester.request(UnitHttpRequest::post().with_body(batch));
+
+        assert_eq!(response.status_code(), 403, "a batch must not bypass a decoy hit");
+        let body: Value = serde_json::from_slice(&response.body()).expect("batch response is JSON");
+        let errors = body.as_array().expect("batch response is an array");
+        assert_eq!(errors.len(), 2, "atomic rejection returns one error per request id");
+        assert!(errors.iter().all(|error| error["error"]["code"] == -32008));
+        assert!(errors.iter().any(|error| error["id"] == 3));
+        assert!(errors.iter().any(|error| error["id"] == 9));
+    }
+
+    #[test]
+    fn clean_jsonrpc_batch_passes() {
+        let mut tester = UnitTestBuilder::default()
+            .with_config(block_config())
+            .with_backend(ok_backend)
+            .with_entrypoint(super::configure);
+
+        let batch = json!([
+            {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "get_orders", "arguments": {}}},
+            {"jsonrpc": "2.0", "id": 4, "method": "tools/list", "params": {}}
+        ])
+        .to_string();
+        let response = tester.request(UnitHttpRequest::post().with_body(batch));
+
+        assert_eq!(response.status_code(), 200);
+    }
+
+    #[test]
+    fn decoy_call_in_jsonrpc_batch_is_flagged_in_monitor_mode() {
+        let backend = Rc::new(TraceBackend::new(ok_backend));
+        let mut tester = UnitTestBuilder::default()
+            .with_config(monitor_config())
+            .with_backend(Rc::clone(&backend))
+            .with_entrypoint(super::configure);
+
+        let batch = json!([
+            {"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": DECOY, "arguments": {}}}
+        ])
+        .to_string();
+        let response = tester.request(UnitHttpRequest::post().with_body(batch));
+
+        assert_eq!(response.status_code(), 200);
+        let forwarded = backend.next().unwrap();
+        assert_eq!(forwarded.header("x-agent-decoy-sentinel"), Some("fired"));
+    }
+
+    #[test]
+    fn malformed_jsonrpc_batch_passes_without_false_block() {
+        let mut tester = UnitTestBuilder::default()
+            .with_config(block_config())
+            .with_backend(ok_backend)
+            .with_entrypoint(super::configure);
+
+        let batch = json!([
+            {"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {}},
+            "not an object"
+        ])
+        .to_string();
+        let response = tester.request(UnitHttpRequest::post().with_body(batch));
+
+        assert_eq!(response.status_code(), 200);
+    }
+
+    #[test]
+    fn decoy_notification_has_no_jsonrpc_response_body() {
+        let mut tester = UnitTestBuilder::default()
+            .with_config(block_config())
+            .with_backend(ok_backend)
+            .with_entrypoint(super::configure);
+
+        let notification = json!({
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {"name": DECOY, "arguments": {}}
+        })
+        .to_string();
+        let response = tester.request(UnitHttpRequest::post().with_body(notification));
+
+        assert_eq!(response.status_code(), 204);
+        assert!(response.body().is_empty());
+    }
+
+    #[test]
+    fn decoy_notification_in_mixed_batch_returns_errors_only_for_request_ids() {
+        let mut tester = UnitTestBuilder::default()
+            .with_config(block_config())
+            .with_backend(ok_backend)
+            .with_entrypoint(super::configure);
+
+        let batch = json!([
+            {"jsonrpc": "2.0", "method": "tools/call", "params": {"name": DECOY, "arguments": {}}},
+            {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "get_orders", "arguments": {}}}
+        ])
+        .to_string();
+        let response = tester.request(UnitHttpRequest::post().with_body(batch));
+
+        assert_eq!(response.status_code(), 403);
+        let body: Value = serde_json::from_slice(&response.body()).expect("batch response is JSON");
+        assert_eq!(body, json!([{
+            "jsonrpc": "2.0",
+            "id": 4,
+            "error": {"code": MCP_BLOCKED_CODE, "message": format!("batch rejected because decoy tool '{DECOY}' is not callable")}
+        }]));
     }
 
     #[test]
