@@ -3,7 +3,7 @@
 name = "decoy_tool_sentinel"
 version = "1.0.0"
 rust-version = "1.89.0"
-edition = "2018"
+edition = "2021"
 resolver = "2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
