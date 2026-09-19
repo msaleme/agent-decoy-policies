@@ -35,10 +35,15 @@ signal.
     alertHeader: x-agent-decoy-sentinel
 ```
 
-A blocked call returns a JSON-RPC error the MCP client understands, e.g.
-`{"jsonrpc":"2.0","id":7,"error":{"code":-32008,"message":"decoy tool 'dump_all_records' is not callable"}}`,
-and the log carries
-`{"event":"agent_decoy_tool_call","control":"NIST SC-26/SC-30","tool":"dump_all_records","action":"blocked"}`.
+A blocked call returns a JSON-RPC error envelope, e.g.
+`{"jsonrpc":"2.0","id":7,"error":{"code":-32008,"message":"decoy tool 'dump_all_records' is not callable"}}`.
+
+Sentinel emits the same control mapping in either mode, with action reflecting the configured behavior:
+
+- block: `{"event":"agent_decoy_tool_call","control":"NIST SC-26/SC-30/SI-4","tool":"dump_all_records","action":"blocked"}`
+- monitor: `{"event":"agent_decoy_tool_call","control":"NIST SC-26/SC-30/SI-4","tool":"dump_all_records","action":"flagged"}`
+
+The policy uses HTTP 403 for response-bearing block decisions and HTTP 204 with no body for notification-only input. The MCP client transport-compatibility contract is tracked separately in #7; no client interoperability claim is made here.
 
 ---
 

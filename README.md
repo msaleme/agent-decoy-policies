@@ -37,7 +37,7 @@ say otherwise.
 | Policy | CISA primitive | What it does | NIST controls |
 |---|---|---|---|
 | [`mcp-honeytoken-tripwire`](./mcp-honeytoken-tripwire) | Honeytoken | Prototype for detecting configured values in decoded request/response bodies. Its current source and tests define the behavior; Flex request/response behavior is not yet integration-validated. | SC-26 (Decoys), SI-20 (Tainting), SI-4 |
-| [`decoy-tool-sentinel`](./decoy-tool-sentinel) | Decoy tool | Prototype for inspecting top-level JSON-RPC `tools/call` objects. JSON-RPC batch arrays are currently unsupported and must not be relied on for blocking until issue #8 is resolved. | SC-26 (Decoys), SC-30 (Concealment & Misdirection), SI-4 |
+| [`decoy-tool-sentinel`](./decoy-tool-sentinel) | Decoy tool | Prototype for inspecting JSON-RPC `tools/call` objects and batches. A decoy hit atomically blocks an otherwise response-eligible batch in source-level unit coverage; Flex runtime behavior is not yet integration-validated. | SC-26 (Decoys), SC-30 (Concealment & Misdirection), SI-4 |
 | [`breadcrumb-misdirection`](./breadcrumb-misdirection) | Breadcrumb | Prototype for JSON tool-list/body transformations. Streaming/SSE and production response-rewrite semantics are outside the currently validated scope. | SC-30 (Concealment & Misdirection), SI-4 |
 
 All three are self-contained Rust implementations with no intentional outbound network calls. Their

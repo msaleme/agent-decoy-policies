@@ -27,6 +27,8 @@ use crate::generated::config::Config;
 
 /// JSON-RPC error code MuleSoft's MCP policies use to signal a blocked tool.
 const MCP_BLOCKED_CODE: i64 = -32008;
+/// NIST controls represented by Sentinel's structured anomaly event.
+const SENTINEL_CONTROL_MAPPING: &str = "NIST SC-26/SC-30/SI-4";
 
 /// Compiled sentinel, built once at configuration time.
 struct Sentinel {
@@ -107,7 +109,7 @@ impl Sentinel {
 fn emit_anomaly(tool: &str, action: &str) {
     let event = json!({
         "event": "agent_decoy_tool_call",
-        "control": "NIST SC-26/SC-30",
+        "control": SENTINEL_CONTROL_MAPPING,
         "tool": tool,
         "action": action,
     });
@@ -231,6 +233,11 @@ mod test {
     use std::rc::Rc;
 
     const DECOY: &str = "dump_all_records";
+
+    #[test]
+    fn emitted_control_mapping_matches_documented_nist_controls() {
+        assert_eq!(super::SENTINEL_CONTROL_MAPPING, "NIST SC-26/SC-30/SI-4");
+    }
 
     fn monitor_config() -> String {
         json!({
