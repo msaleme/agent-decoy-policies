@@ -9,12 +9,10 @@ You wire a tool into the fabric that has **no legitimate use** — `dump_all_rec
 is probing for reach. (CISA's example: a fake network-scanning tool on a nontechnical user's box — any
 execution indicates malicious activity.)
 
-The sentinel inspects the MCP JSON-RPC body and fires **only on `tools/call`** of a decoy name — never on
-`tools/list`, so the decoy stays discoverable in the catalog (the bait) while only *calling* it is the
-signal.
+The sentinel inspects only a complete MCP/JSON-RPC 2.0 request body—one request object or a non-empty batch whose members are all JSON-RPC 2.0 requests—and fires **only on `tools/call`** of a decoy name. Malformed, non-JSON-RPC, and mixed-invalid inputs pass through. It never fires on `tools/list`, so the decoy stays discoverable in the catalog (the bait) while only *calling* it is the signal.
 
 - **`monitor`** (Expose) — emit the anomaly, stamp the alert header, let the call proceed.
-- **`block`** (Affect) — refuse the call with a JSON-RPC error (`-32008`) so the decoy never executes.
+- **`block`** (Affect) — refuse the call with a JSON-RPC error (`-32008`) so the decoy never executes. A response-bearing JSON-RPC request receives HTTP `200` with an `application/json` error envelope; a notification-only input receives HTTP `202` with no body.
 
 ### Configuration
 

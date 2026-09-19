@@ -59,25 +59,26 @@ impl Sentinel {
         }
     }
 
-    /// Parses a JSON-RPC object or batch, preserving batch shape and request IDs
-    /// for protocol-valid block responses. Invalid JSON and non-calls have no
-    /// candidate calls or response IDs.
-    fn called_tools(body: &[u8]) -> ParsedCalls {
-        let root: Value = match serde_json::from_slice(body) {
-            Ok(value) => value,
-            Err(_) => {
-                return ParsedCalls {
-                    is_batch: false,
-                    calls: Vec::new(),
-                    response_ids: Vec::new(),
-                }
-            }
-        };
+    /// Parses a complete JSON-RPC 2.0 request object or batch, preserving batch
+    /// shape and response IDs for protocol-valid block responses. Malformed,
+    /// non-JSON-RPC, and mixed-invalid input remains outside this policy's
+    /// interception contract.
+    fn called_tools(body: &[u8]) -> Option<ParsedCalls> {
+        let root: Value = serde_json::from_slice(body).ok()?;
         let is_batch = matches!(root, Value::Array(_));
         let items: Vec<&Value> = match &root {
-            Value::Array(items) => items.iter().collect(),
-            _ => vec![&root],
+            Value::Array(items) if !items.is_empty() => items.iter().collect(),
+            Value::Object(_) => vec![&root],
+            _ => return None,
         };
+
+        if items.iter().any(|item| {
+            item.get("jsonrpc").and_then(Value::as_str) != Some("2.0")
+                || item.get("method").and_then(Value::as_str).is_none()
+        }) {
+            return None;
+        }
+
         let response_ids = items
             .iter()
             .filter_map(|value| value.get("id").cloned())
@@ -96,11 +97,11 @@ impl Sentinel {
             })
             .collect();
 
-        ParsedCalls {
+        Some(ParsedCalls {
             is_batch,
             calls,
             response_ids,
-        }
+        })
     }
 }
 
@@ -133,7 +134,10 @@ async fn request_filter(request_state: RequestState, sentinel: &Sentinel) -> Flo
         return Flow::Continue(());
     }
 
-    let parsed = Sentinel::called_tools(&body);
+    let parsed = match Sentinel::called_tools(&body) {
+        Some(parsed) => parsed,
+        None => return Flow::Continue(()),
+    };
     let tool = match parsed
         .calls
         .iter()
@@ -149,7 +153,7 @@ async fn request_filter(request_state: RequestState, sentinel: &Sentinel) -> Flo
 
     if sentinel.block {
         if parsed.response_ids.is_empty() {
-            return Flow::Break(Response::new(204));
+            return Flow::Break(Response::new(202));
         }
 
         if parsed.is_batch {
@@ -168,7 +172,7 @@ async fn request_filter(request_state: RequestState, sentinel: &Sentinel) -> Flo
                 })
                 .collect();
             Flow::Break(
-                Response::new(403)
+                Response::new(200)
                     .with_headers([
                         ("Content-Type".to_string(), "application/json".to_string()),
                         (sentinel.alert_header.clone(), "fired".to_string()),
@@ -178,7 +182,7 @@ async fn request_filter(request_state: RequestState, sentinel: &Sentinel) -> Flo
         } else {
             let id = parsed.response_ids.into_iter().next().unwrap();
             Flow::Break(
-                Response::new(403)
+                Response::new(200)
                     .with_headers([
                         ("Content-Type".to_string(), "application/json".to_string()),
                         (sentinel.alert_header.clone(), "fired".to_string()),
@@ -304,7 +308,8 @@ mod test {
             .with_entrypoint(super::configure);
 
         let response = tester.request(UnitHttpRequest::post().with_body(tools_call(DECOY)));
-        assert_eq!(response.status_code(), 403);
+        assert_eq!(response.status_code(), 200, "response-bearing MCP requests receive an in-band JSON-RPC error");
+        assert_eq!(response.header("content-type"), Some("application/json"));
         let body = String::from_utf8_lossy(&response.body()).to_string();
         assert!(body.contains("-32008"), "expected JSON-RPC block error");
         assert!(body.contains(DECOY));
@@ -324,7 +329,8 @@ mod test {
         .to_string();
         let response = tester.request(UnitHttpRequest::post().with_body(batch));
 
-        assert_eq!(response.status_code(), 403, "a batch must not bypass a decoy hit");
+        assert_eq!(response.status_code(), 200, "a response-bearing batch receives an in-band JSON-RPC error array");
+        assert_eq!(response.header("content-type"), Some("application/json"));
         let body: Value = serde_json::from_slice(&response.body()).expect("batch response is JSON");
         let errors = body.as_array().expect("batch response is an array");
         assert_eq!(errors.len(), 2, "atomic rejection returns one error per request id");
@@ -371,9 +377,10 @@ mod test {
 
     #[test]
     fn malformed_jsonrpc_batch_passes_without_false_block() {
+        let backend = Rc::new(TraceBackend::new(ok_backend));
         let mut tester = UnitTestBuilder::default()
             .with_config(block_config())
-            .with_backend(ok_backend)
+            .with_backend(Rc::clone(&backend))
             .with_entrypoint(super::configure);
 
         let batch = json!([
@@ -384,6 +391,46 @@ mod test {
         let response = tester.request(UnitHttpRequest::post().with_body(batch));
 
         assert_eq!(response.status_code(), 200);
+        assert!(backend.next().is_some(), "malformed input must continue upstream");
+    }
+
+    #[test]
+    fn non_jsonrpc_decoy_shaped_body_passes_without_false_block() {
+        let backend = Rc::new(TraceBackend::new(ok_backend));
+        let mut tester = UnitTestBuilder::default()
+            .with_config(block_config())
+            .with_backend(Rc::clone(&backend))
+            .with_entrypoint(super::configure);
+
+        let body = json!({
+            "id": 7,
+            "method": "tools/call",
+            "params": {"name": DECOY, "arguments": {}}
+        })
+        .to_string();
+        let response = tester.request(UnitHttpRequest::post().with_body(body));
+
+        assert_eq!(response.status_code(), 200);
+        assert!(backend.next().is_some(), "non-JSON-RPC traffic must continue upstream");
+    }
+
+    #[test]
+    fn mixed_non_jsonrpc_batch_with_decoy_passes_without_false_block() {
+        let backend = Rc::new(TraceBackend::new(ok_backend));
+        let mut tester = UnitTestBuilder::default()
+            .with_config(block_config())
+            .with_backend(Rc::clone(&backend))
+            .with_entrypoint(super::configure);
+
+        let batch = json!([
+            {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "get_orders", "arguments": {}}},
+            {"id": 9, "method": "tools/call", "params": {"name": DECOY, "arguments": {}}}
+        ])
+        .to_string();
+        let response = tester.request(UnitHttpRequest::post().with_body(batch));
+
+        assert_eq!(response.status_code(), 200);
+        assert!(backend.next().is_some(), "a mixed invalid batch must continue upstream");
     }
 
     #[test]
@@ -401,7 +448,7 @@ mod test {
         .to_string();
         let response = tester.request(UnitHttpRequest::post().with_body(notification));
 
-        assert_eq!(response.status_code(), 204);
+        assert_eq!(response.status_code(), 202, "accepted MCP notifications return 202 with no body");
         assert!(response.body().is_empty());
     }
 
@@ -419,7 +466,8 @@ mod test {
         .to_string();
         let response = tester.request(UnitHttpRequest::post().with_body(batch));
 
-        assert_eq!(response.status_code(), 403);
+        assert_eq!(response.status_code(), 200, "a response-bearing batch receives an in-band JSON-RPC error array");
+        assert_eq!(response.header("content-type"), Some("application/json"));
         let body: Value = serde_json::from_slice(&response.body()).expect("batch response is JSON");
         assert_eq!(body, json!([{
             "jsonrpc": "2.0",
