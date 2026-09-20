@@ -14,6 +14,10 @@ streaming implementations. Issues #6 and #13 remain open.
 
 ## #6: Monitoring verification needs a designated Connected Mode target
 
+**Subsequent result:** the user authorized a disposable Sandbox target, and
+[Connected Mode export verification](CONNECTED-MONITORING-EVIDENCE.md) passed on
+2026-09-20. The remaining text in this section records the earlier boundary.
+
 Sentinel emits a PDK violation for both monitor and block hits. Library tests
 observe that property and its single-slot replacement semantics. The two real
 Flex suites prove HTTP behavior, not exported Anypoint Monitoring metrics.
