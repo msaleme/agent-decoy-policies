@@ -67,6 +67,24 @@ Honeytoken registration was remotely deleted before its local file was removed.
 Deployment load/recovery, absolute upload deadlines, and double-write termination
 remain open under #13. #6 still needs the designated Connected Mode target.
 
+## Outer upload-gate follow-up
+
+The [optional HAProxy gate](../deployment/upload-gate/README.md) now supplies a
+verified two-second body collection deadline with a complete-body check before
+forwarding. Credential-free Docker tests cover active and concurrent uploads,
+buffer saturation, framing rejection, a 64 KiB clean control, live cgroup limits,
+a kernel OOM kill, and explicit restart/recovery. CI runs this outer-component
+suite. The Compose profile removes the direct Flex host port.
+
+The optional `--flex` suite also passed through edge → Flex 1.14.0 → synthetic
+backend, including sixteen concurrent 64 KiB clean exchanges, Honeytoken denial,
+a kernel OOM kill in Flex’s 1 GiB cgroup and explicit restart/recovery. The test
+registration was remotely deleted before local removal. These are bounded local
+results; production ingress isolation and sizing remain deployment responsibilities.
+The missing PDK response-stage termination capability remains open under #13.
+#6 still awaits the requested authorization for a dedicated Connected Mode test
+target and test-only Sentinel publication, or designation of an existing target.
+
 ## Registration lifecycle
 
 `flexctl registration delete --help` confirms that Local Mode registration deletion
@@ -84,6 +102,6 @@ Sandbox environment ID was checked before supported
 returned success. No shared gateway was selected, and no identity file was
 recreated. Nonsecret deletion evidence remains outside the repository.
 
-All five disposable registrations used across these review rounds have now
+All five disposable registrations used through PR #25 have now
 received successful remote deletion responses. Local fixture removal alone
 was not treated as evidence of remote deletion.
