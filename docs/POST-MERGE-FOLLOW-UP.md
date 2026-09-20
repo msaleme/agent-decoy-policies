@@ -1,5 +1,9 @@
 # Post-merge issue follow-up
 
+This is a historical evidence log. For current issue and registration-cleanup
+status, see [Remaining security work](REMAINING-ISSUES-PLAN.md). The older
+registrations described below were subsequently recovered and deleted.
+
 PR #21 merged the reviewed remediation as `5a1ce61`. Issues #1, #2, #3, #4, #5,
 #9, #11, #12 and #16 were subsequently closed with issue-specific links to the
 merged implementation, tests and independent review. SSE issues #2/#11 were

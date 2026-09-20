@@ -54,6 +54,19 @@ termination guarantee is inferred from per-stream buffering tests.
   The existing standalone Sentinel violation implementation is unchanged. Its
   25 native tests pass; actual exported metrics remain unverified.
 
+## Resource preflight follow-up
+
+[Gateway resource preflight](GATEWAY-RESOURCE-PREFLIGHT.md) supplies an opt-in
+Docker memory/swap profile and a checker that confirms live cgroup-v2 limits.
+A real isolated container without a memory cap was rejected; a 256 MiB hard cap
+with no swap passed. This is kernel/configuration evidence, not a Flex load test.
+The expanded Honeytoken suite passed **5/5, 62.80 seconds**, including an active
+two-second upload accepted under a one-second stream idle timer. This confirms
+that the idle timer is not an absolute upload deadline. The newest disposable
+Honeytoken registration was remotely deleted before its local file was removed.
+Deployment load/recovery, absolute upload deadlines, and double-write termination
+remain open under #13. #6 still needs the designated Connected Mode target.
+
 ## Registration lifecycle
 
 `flexctl registration delete --help` confirms that Local Mode registration deletion
