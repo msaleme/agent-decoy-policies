@@ -82,9 +82,10 @@ cleanup after the bounded run.
 
 ## Unresolved independently of registration
 
-PDK response-stage double-write termination, pre-buffer actual-byte limits, SSE seeding, and
-cross-policy composition are still not proven by these fixtures. See
-[the issue/evidence checklist](REMEDIATION-EVIDENCE.md).
+These historical fixtures do not establish every runtime guarantee. Later work adds
+resource controls and coordinated composition; low-level response-write containment
+and general SSE transformation remain limited. See
+[current acceptance and verification](REMAINING-ISSUES-PLAN.md).
 
 ## Current coordinator and lifecycle procedure
 
@@ -99,5 +100,6 @@ After authorized runtime tests, use the supported `flexctl registration delete`
 operation with `--file` pointing to that policy's disposable registration and the
 operator's authorized authentication. Capture its success before removing the
 local identity. Preserve only nonsecret name/ID/deletion evidence. For Local Mode,
-a name alone is insufficient for subsequent deletion. Older missing-ID cleanup
-is explicitly tracked in the remaining-issues plan.
+a name alone is insufficient for subsequent deletion. The older missing-ID
+registrations were recovered from audit records and deleted; current lifecycle
+evidence is recorded in the acceptance-status document.

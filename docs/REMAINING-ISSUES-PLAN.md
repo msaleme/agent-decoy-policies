@@ -1,107 +1,73 @@
-# Remaining security work
+# Current acceptance and verification status
 
-This plan tracks acceptance evidence, not merely implementation status.
+Checked on **2026-09-20** against `main` at
+`4bb7b45bf0774ba572b151fc3305992ca73791c1`. GitHub has **zero open issues and
+zero open pull requests** at this checkpoint. This document supersedes the
+issue-state and next-step instructions in the older remediation logs.
 
-1. **Transport (#13):** exercise conflicting request framing, incomplete/slow
-   uploads, and two exchanges on a verified single TCP connection. Assert both
-   client bytes and backend admissions. Keep response-stage double-write failure
-   separate from successful body mutation and gateway timeout evidence.
-2. **Composition (#23):** provide a single coordinating policy with immutable
-   original-body detection, terminal decisions before request mutation, required
-   response redaction before optional seeding, and final output validation.
-   Add regressions for overlapping markers, seed-created tokens, forged headers,
-   and failed writes. Require native tests and actual Flex wire evidence.
-3. **Monitoring (#6):** use a designated disposable Connected Mode Sandbox target;
-   establish clean/monitor/block windows and observe exported violation metrics.
-   A property assertion or gateway log is not Monitoring evidence. Dedicated
-   target creation/test asset publication is awaiting the owner's answer.
-4. **Lifecycle:** resolve exact disposable registrations by recorded names,
-   confirm remote deletion/revocation when possible, and remove local identities
-   after runtime checks. Never delete an unrelated gateway or claim local removal
-   proves remote revocation.
-5. **Delivery:** independent review, strict Clippy, library and integration checks,
-   release WASM and asset/provenance hygiene, passing CI, then merge. Keep any
-   platform-blocked acceptance item open with its exact remaining prerequisite.
+## Reviewer acceptance
 
-No arbitrary ordering of the existing independent filters is considered a
-composition implementation. No policy-level total-process-memory or failed-write
-termination guarantee is inferred from per-stream buffering tests.
+| Issue | Accepted result | Closure evidence |
+| --- | --- | --- |
+| #6 | Sentinel calls `generate_policy_violation()` for hits in both monitor and block modes, before the block branch | [Original reviewer's code verification and closure](https://github.com/msaleme/agent-decoy-policies/issues/6#issuecomment-5749661111), 2026-09-20 12:00 UTC |
+| #13 | Headers-phase admission and bounded buffering remediation accepted | [Original reviewer's closure](https://github.com/msaleme/agent-decoy-policies/issues/13#issuecomment-5749860250), 2026-09-20 12:40 UTC |
+| #23 | Opt-in single coordinator implements original-body detection, action ordering and final rescanning for its documented bounded JSON-RPC scope | [Merged PR #25](https://github.com/msaleme/agent-decoy-policies/pull/25) |
 
-## Implementation and evidence
+The issue closures accept their original implementation scope. They do not provide
+new runtime evidence or remove the platform limitations below. In particular, the
+#13 closure summary must not be read as saying *all* unsupported responses bypass
+buffering: in **block mode**, Honeytoken still enters the buffered response state
+to withhold an uninspectable body. Monitor mode skips that inspection. Requests
+that fail headers admission are rejected before body inspection/upstream execution.
 
-- **#23 implemented:** `decoy-coordinator` supplies a single coordinating extension
-  for the documented bounded single-envelope JSON-RPC contract. Independent review
-  approved it after regressions exposed and fixed protocol-field mutation, missing
-  response monitor detection, protected IDs in local denials, and oversized denial
-  envelopes. It deliberately retains the separately documented PDK termination gap.
-- **#13 advanced:** `raw_framing_idle_upload_and_same_socket_reuse` returns 400 for
-  Content-Length/Transfer-Encoding conflicts and inconsistent duplicate lengths,
-  returns 408 for an incomplete idle upload, and proves clean → denied → clean
-  exchanges on one TCP stream. A catch-all unexpected backend asserts zero hits.
-  The stream idle timer is not an absolute deadline for a continuously active
-  slow upload. Process-wide resource ceilings and response double-write termination
-  still require an outer/runtime capability and remain open acceptance items.
-- **Local verification:** 100 library tests (42 Honeytoken, 25 Sentinel,
-  14 Breadcrumb, 19 Coordinator); all four strict all-target Clippy and format checks;
-  11 Python tests, including four Makefile subcases; four release WASM bundles.
-- **Final runtime verification:** Honeytoken **5/5, 61.49 seconds**; Coordinator
-  **2/2, 22.54 seconds**. These are Local Mode wire tests, not Monitoring export.
-  One parallel attempt failed; the serial run passed. The PDK harness cleanup
-  selects a shared Docker label, so run different policy suites serially on the
-  same Docker daemon to avoid interference. CI only compiles these runtime suites.
-- **#6 blocked:** no target choice/authorization has been received for the proposed
-  disposable Connected Mode API/gateway and test-only Sentinel publication.
-  The existing standalone Sentinel violation implementation is unchanged. Its
-  25 native tests pass; actual exported metrics remain unverified.
+## Verification on merged main
 
-## Resource preflight follow-up
+[Successful main CI run](https://github.com/msaleme/agent-decoy-policies/actions/runs/35485920509):
 
-[Gateway resource preflight](GATEWAY-RESOURCE-PREFLIGHT.md) supplies an opt-in
-Docker memory/swap profile and a checker that confirms live cgroup-v2 limits.
-A real isolated container without a memory cap was rejected; a 256 MiB hard cap
-with no swap passed. This is kernel/configuration evidence, not a Flex load test.
-The expanded Honeytoken suite passed **5/5, 62.80 seconds**, including an active
-two-second upload accepted under a one-second stream idle timer. This confirms
-that the idle timer is not an absolute upload deadline. The newest disposable
-Honeytoken registration was remotely deleted before its local file was removed.
-Deployment load/recovery, absolute upload deadlines, and double-write termination
-remain open under #13. #6 still needs the designated Connected Mode target.
+- **100 library tests:** Honeytoken 42, Sentinel 25, Breadcrumb 14, Coordinator 19.
+- **22 Python tests**, all four formatting/strict all-target Clippy checks,
+  integration-test compilation, and four release WASM/bundle checks.
+- Actual credential-free Docker upload-gate tests: active upload deadline,
+  framing/buffer-saturation rejection, zero unexpected backend connections,
+  sixteen concurrent slow uploads, a 64 KiB clean exchange, verified 128 MiB
+  cgroup cap, kernel OOM event and explicit restart/recovery.
 
-## Outer upload-gate follow-up
+The previous authorized Local Mode runs also verified the complete
+edge → Flex 1.14.0 → synthetic-backend chain: Honeytoken denial, sixteen concurrent
+64 KiB clean exchanges, a live 1 GiB Flex cgroup cap, kernel OOM event and explicit
+restart/recovery. See [the reproduction and evidence boundary](../deployment/upload-gate/README.md).
+These full-chain tests are local evidence; public CI does not receive a Flex identity.
+Run different PDK policy runtime suites serially on one Docker daemon because
+PDK cleanup selects shared labels.
 
-The [optional HAProxy gate](../deployment/upload-gate/README.md) now supplies a
-verified two-second body collection deadline with a complete-body check before
-forwarding. Credential-free Docker tests cover active and concurrent uploads,
-buffer saturation, framing rejection, a 64 KiB clean control, live cgroup limits,
-a kernel OOM kill, and explicit restart/recovery. CI runs this outer-component
-suite. The Compose profile removes the direct Flex host port.
+## Remaining limitations and optional follow-up
 
-The optional `--flex` suite also passed through edge → Flex 1.14.0 → synthetic
-backend, including sixteen concurrent 64 KiB clean exchanges, Honeytoken denial,
-a kernel OOM kill in Flex’s 1 GiB cgroup and explicit restart/recovery. The test
-registration was remotely deleted before local removal. These are bounded local
-results; production ingress isolation and sizing remain deployment responsibilities.
-The missing PDK response-stage termination capability remains open under #13.
-#6 still awaits the requested authorization for a dedicated Connected Mode test
-target and test-only Sentinel publication, or designation of an existing target.
+1. **Monitoring export:** Sentinel's PDK violation implementation is accepted;
+   exported Anypoint Monitoring counts have not been observed. A dedicated
+   Connected Mode target and any test-only publication remain separately authorized
+   deployment work. They are not a remaining condition for the reviewer's #6 closure.
+2. **Response containment under host failure:** successful redaction/withholding
+   cases are tested, but the PDK does not acknowledge low-level body writes through
+   `set_body`'s result. No real Flex double-error disclosure has been reproduced.
+   See the [precise source audit and capability boundary](../mcp-honeytoken-tripwire/docs/pdk-response-termination-gap.md).
+3. **Deployment scope:** the optional outer gate restricts requests to bounded
+   POST bodies. Production ingress isolation, workload sizing, TLS and transport
+   compatibility require deployment-specific validation. Explicit restart tests
+   do not establish automatic recovery or uninterrupted availability.
 
-## Registration lifecycle
+No new policy publication or Connected Mode deployment is needed to record the
+accepted issue status. Do not reopen closed issues solely because older handoff
+instructions said to keep them open, or describe these bounded tests as universal
+production certification.
 
-`flexctl registration delete --help` confirms that Local Mode registration deletion
-requires a gateway ID or the registration file; deletion by name is unsupported.
-The two fresh registrations used for this round are deleted remotely using the
-supported `registration delete --file` operation before local file removal.
-Only nonsecret lifecycle records remain in ignored target directories.
+## Lifecycle and repository hygiene
 
-The **three older registrations are also deleted remotely**. Their local files
-had been removed before remote deletion, leaving names without gateway IDs.
-A narrowly scoped, read-only Audit Log Query recovered the three successful
-Flex Gateway creation records. Each exact registration name, object ID, and
-Sandbox environment ID was checked before supported
-`flexctl registration delete --gateway-id` was run. All three operations
-returned success. No shared gateway was selected, and no identity file was
-recreated. Nonsecret deletion evidence remains outside the repository.
+All disposable registrations created for the review rounds were deleted remotely
+before the final local cleanup. For the three older identities whose local files
+had already been removed, exact names/IDs/environment were recovered from creation
+audit records and supported deletion by ID succeeded. Later identities were deleted
+using `flexctl registration delete --file` before local removal. Nonsecret lifecycle
+records remain outside tracked source; no registration material belongs in Git.
 
-All five disposable registrations used through PR #25 have now
-received successful remote deletion responses. Local fixture removal alone
-was not treated as evidence of remote deletion.
+The audit found no tracked working-tree changes before this documentation correction.
+The pre-existing untracked `.hermes/` directory is preserved and excluded from commits.

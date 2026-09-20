@@ -65,7 +65,7 @@ a 128 MiB cap. The optional Local Mode suite additionally verifies the complete
 edge/Flex/synthetic-backend chain, sixteen concurrent 64 KiB exchanges, and Flex
 OOM/explicit restart under a verified 1 GiB cgroup cap.
 
-## Still required for #13
+## Deployment limits after reviewer acceptance
 
 - Apply and validate ingress isolation and workload-specific sizing in the target
   deployment. Local full-chain load/OOM/restart evidence is now available; it is
@@ -73,8 +73,10 @@ OOM/explicit restart under a verified 1 GiB cgroup cap.
 - Supported downstream termination after both response-body replacement attempts
   fail; see the [PDK gap](../mcp-honeytoken-tripwire/docs/pdk-response-termination-gap.md).
 
-#6 remains separate: a designated Connected Mode API/gateway and actual exported
-Monitoring counts are required. Local cgroup or wire tests cannot supply them.
+#6 and #13 were subsequently closed by the original reviewer. Optional exported
+Monitoring verification still requires a designated Connected Mode target; local
+cgroup or wire tests cannot supply that evidence. See the
+[current acceptance status](REMAINING-ISSUES-PLAN.md).
 
 ## Sources
 

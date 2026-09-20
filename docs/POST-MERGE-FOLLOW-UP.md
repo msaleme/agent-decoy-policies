@@ -2,7 +2,9 @@
 
 This is a historical evidence log. For current issue and registration-cleanup
 status, see [Remaining security work](REMAINING-ISSUES-PLAN.md). The older
-registrations described below were subsequently recovered and deleted.
+registrations described below were subsequently recovered and deleted. The original
+reviewer also closed #6 and #13 on 2026-09-20; older keep-open instructions below
+are historical, not current next steps.
 
 PR #21 merged the reviewed remediation as `5a1ce61`. Issues #1, #2, #3, #4, #5,
 #9, #11, #12 and #16 were subsequently closed with issue-specific links to the
