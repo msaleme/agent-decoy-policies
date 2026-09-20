@@ -618,6 +618,22 @@ async fn raw_framing_idle_upload_and_same_socket_reuse() -> anyhow::Result<()> {
     assert_eq!(connection.response()?, (200, b"safe".to_vec()));
     clean.assert_hits_async(2).await;
 
+    // Each byte arrives before the one-second idle limit, but the complete
+    // upload takes two seconds. This proves the idle limit is not an absolute
+    // request-body deadline; it must not be advertised as one.
+    let mut active = raw::Connection::new(&flex_url)?;
+    active.send(b"POST /anything/echo/ HTTP/1.1\r\nHost: localhost\r\nContent-Type: text/plain\r\nContent-Length: 5\r\n\r\n")?;
+    let start = std::time::Instant::now();
+    for (index, byte) in b"clean".iter().enumerate() {
+        if index != 0 {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+        active.send(&[*byte])?;
+    }
+    assert!(start.elapsed() >= std::time::Duration::from_secs(2));
+    assert_eq!(active.response()?, (200, b"safe".to_vec()));
+    clean.assert_hits_async(3).await;
+
     for headers in [
         "Content-Length: 8\r\nTransfer-Encoding: chunked",
         "Content-Length: 8\r\nContent-Length: 9",

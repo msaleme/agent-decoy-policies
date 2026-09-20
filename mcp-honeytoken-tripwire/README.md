@@ -26,6 +26,10 @@ Rewritten output is rescanned for raw and decoded matches before forwarding. Res
 
 When a response is redacted, the policy removes `Content-Length` and `Content-Encoding` rather than forwarding framing metadata for pre-rewrite bytes.
 
+For an opt-in aggregate Docker memory cap and live kernel verification, see the
+[gateway resource preflight](../docs/GATEWAY-RESOURCE-PREFLIGHT.md). This does not
+replace an absolute upload deadline or the response termination requirement.
+
 ### Response-containment platform boundary
 
 The policy uses a non-expanding replacement and then an empty-body fallback. If Flex rejects both writes, PDK 1.10 exposes no supported response-stage abort/local-reply operation, so this policy cannot independently guarantee downstream termination. See [the minimal PDK gap record](docs/pdk-response-termination-gap.md) for the verified fallback path, remaining limitation, and required outer enforcement capability.
