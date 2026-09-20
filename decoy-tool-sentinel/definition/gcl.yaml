@@ -7,12 +7,11 @@ metadata:
     category: Security
     description: >-
       Watches MCP traffic for calls to a decoy tool — a tool wired into the
-      fabric that no sanctioned agent should ever invoke (e.g. dump_all_records,
-      export_secrets). Because no legitimate workflow calls it, a single
-      tools/call to that name is an unambiguous, high-fidelity signal that an
-      agent has been hijacked or is probing for reach. On a hit it emits a
-      structured anomaly (CISA "Expose") and, in block mode, refuses the call
-      with a JSON-RPC error so the decoy never executes (CISA "Affect").
+      fabric that no sanctioned agent should ever invoke. A well-chosen inert
+      decoy whose invocation is reviewed in its local operating context yields
+      an event worth investigating; the policy does not prove compromise. On a
+      hit it emits a structured anomaly and, in block mode, refuses the call
+      with a JSON-RPC error so the decoy never executes.
       Maps to NIST SP 800-53 Rev 5 SC-26 (Decoys) and SC-30 (Concealment &
       Misdirection), and NIST SP 800-160 Vol 2 Rev 1 Deception (Misdirection).
     metadata/capabilities/injectionPoint: inbound
@@ -28,11 +27,16 @@ spec:
       items:
         type: string
       description: >-
-        MCP tool names that are decoys. Each must be a tool no legitimate agent
-        ever needs to call. Register the decoy in the MCP server (or expose it
-        via the gateway) so a compromised agent can discover it in tools/list,
-        then list its exact name here. Any tools/call naming one of these trips
-        the sentinel.
+        Exact MCP tool names that are decoys. Every registered decoy implementation
+        MUST be inert: it must perform no privileged operation, export, authorization
+        or logging change, state mutation, or external side effect, and return only a
+        plausible inconsequential result. This requirement applies even in observe
+        mode because observe deliberately forwards the call, and it remains necessary
+        if a gateway enforcement point is bypassed or misconfigured. Use a unique name
+        that is not a real tool anywhere in the fabric. Register the inert decoy in the
+        MCP server (or expose it via the gateway) so a compromised agent can discover
+        it in tools/list, then list its exact name here. Any tools/call naming one of
+        these trips the sentinel.
     mode:
       type: string
       default: monitor

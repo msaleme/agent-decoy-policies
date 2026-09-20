@@ -4,26 +4,41 @@
 > NIST SP 800-53 Rev 5 **SC-26** (Decoys), **SI-20** (Tainting), **SI-4**. OWASP **LLM06**.
 
 A honeytoken is a value with **no legitimate use**: a fake credential, a synthetic record id, a decoy
-email or URL. You plant it in the data an agent can reach; this policy watches **both directions** of
-every exchange for it. Because nothing real ever references the token, a single appearance is a
-high-fidelity, near-zero-noise signal that an agent has been compromised or is exfiltrating the decoy.
+email or URL. You plant it in data an agent can reach; this policy watches **both directions**
+of eligible exchanges for it. Matching is presence-only rather than field-aware: a token quoted in
+an agent status report can trip the wire. A well-chosen decoy, matched appropriately to local
+traffic and operating response, yields an event worth investigating; this policy cannot establish
+that a match alone proves compromise.
 
 - **`monitor`** (Expose) — emit a structured anomaly to the gateway log and stamp the alert header;
-  traffic continues. Safe to run everywhere.
-- **`block`** (Affect) — reject a **request** that references a honeytoken. For one complete JSON-RPC 2.0 request object, or a non-empty batch whose every member has `jsonrpc: "2.0"` and a string `method`, the policy returns an HTTP `200` JSON-RPC `-32008` error preserving request IDs; notification-only input returns HTTP `202` with no body. Non-JSON-RPC, malformed, and mixed-invalid traffic retains the explicit generic HTTP `403` policy response. In all cases, a honeytoken in a **response** body is stripped so the decoy can never actually leave the gateway.
+  eligible traffic continues unchanged.
+- **`block`** (Affect) — reject a **request** that references a honeytoken. For one complete JSON-RPC 2.0 request object, or a non-empty batch whose every member has `jsonrpc: "2.0"` and a string `method`, the policy returns an HTTP `200` JSON-RPC `-32008` error preserving request IDs; notification-only input returns HTTP `202` with no body. These batch paths are generic JSON-RPC and compatibility coverage for legacy MCP (≤2025-03-26), not current MCP behavior. A tripped response-eligible batch is atomically refused in `block` mode; there is no batch forwarding override. A detected token in parseable non-JSON-RPC or mixed-invalid traffic retains the generic HTTP `403` policy response. Explicit JSON that cannot be parsed within the supported limits instead receives HTTP `415`. For eligible response bodies, a honeytoken is stripped without expanding the body; rewrite/framing failures trigger an empty-body withholding attempt, subject to the response-containment platform boundary below.
+
+### Inspection boundary
+
+To avoid inspecting unbounded or lossy payload classes, the policy only semantically scans request or response bodies that have all of the following: an explicit, valid `Content-Length` no greater than **64 KiB**; no `Content-Encoding`; and `application/json`, `application/*+json`, or `text/plain` (legacy requests/responses with no content type are retained for compatibility, but still require a valid length). In `monitor` mode, bodies outside this boundary pass uninspected. In `block` mode they are rejected before upstream on requests and withheld with an empty body on responses. Explicit JSON media types and legacy bodies without a content type that begin with `{` or `[` (after whitespace) must also parse within the default bounded `serde_json::Value` depth and numeric representation limits. Invalid JSON, excessive nesting, and out-of-range numbers (for example `1e400`) are rejected with HTTP `415` on requests and withheld on responses in `block` mode, whether or not a token was detected. `monitor` preserves those bodies; it cannot guarantee decoded-token detection outside these limits. Plain text and other legacy missing-content-type bodies retain best-effort raw/parseable-JSON scanning. This is a **declared-length eligibility filter**, not an independently enforced received-byte memory cap: Flex/Gateway infrastructure must enforce framing and actual buffering limits.
+
+Rewritten output is rescanned for raw and decoded matches before forwarding. Residual matches, including numeric/boolean values alongside string matches, cause an empty-body withholding attempt. SSE is not an admitted media type.
+
+When a response is redacted, the policy removes `Content-Length` and `Content-Encoding` rather than forwarding framing metadata for pre-rewrite bytes.
+
+### Response-containment platform boundary
+
+The policy uses a non-expanding replacement and then an empty-body fallback. If Flex rejects both writes, PDK 1.10 exposes no supported response-stage abort/local-reply operation, so this policy cannot independently guarantee downstream termination. See [the minimal PDK gap record](docs/pdk-response-termination-gap.md) for the verified fallback path, remaining limitation, and required outer enforcement capability.
 
 ### Configuration
 
 | Field | Type | Default | Purpose |
 |---|---|---|---|
 | `honeytokens` | string[] | `[]` | Decoy values to watch for. Plant the same value in the agent's reachable data. |
+| `decoyIds` | string[] | `[]` | Opaque operator-assigned IDs parallel to `honeytokens`; used in logs instead of token content. Empty/omitted uses positional `unlabeled-decoy-N` labels; a nonempty list must be complete, unique, and nonblank. |
 | `mode` | `monitor`\|`block` | `monitor` | Flag-only vs. reject-and-strip. |
 | `alertHeader` | string | `x-agent-decoy-tripwire` | Header stamped on a tripped exchange (for SIEM / Kill Switch). |
 | `caseSensitive` | boolean | `false` | ASCII case-insensitive matching by default, so casing changes don't evade the wire. |
 
 ```yaml
 - policyRef:
-    name: mcp-honeytoken-tripwire-flex
+    name: mcp-honeytoken-tripwire-v1-0-impl
   config:
     honeytokens:
       - "acct_DECOY_9x1f-do-not-use"
@@ -34,8 +49,9 @@ high-fidelity, near-zero-noise signal that an agent has been compromised or is e
 ```
 
 On a hit the log carries a structured event, e.g.
-`{"event":"agent_decoy_tripwire","control":"NIST SC-26/SI-20","direction":"request","token":"acc…(len=26)","action":"blocked"}`
-(the token is logged only as a truncated fingerprint, so the log never becomes a copy of the decoy).
+`{"event":"agent_decoy_tripwire","control":"NIST SC-26/SI-20","direction":"request","decoy_id":"billing-canary-01","action":"blocked"}`
+
+`decoy_id` is an opaque operator-supplied correlation label; the policy never logs the token value, prefix, or length.
 
 ---
 
@@ -67,7 +83,7 @@ Since the source code must be in sync with the policy definition configurations,
 
 ### Run
 The `make run` goal provides a simple way to execute the current build of the policy in a Docker containerized environment. In order to run this goal, the `playground/config` directory must contain a set of files required for executing the policy in a Flex Gateway instance:
-- A `registration.yaml` file generated by performing a Flex Gateway registration in Local Mode. If you already have an instance registered in Local mode, you can reuse the registration file you have and copy it in the `playground/config` folder.
+- A `registration.yaml` generated for a **local, disposable** Flex Gateway registration. It contains client-identity material: keep it untracked, do not copy it between projects or machines, and never commit it. If no local registration is available, treat Docker runtime verification as blocked rather than replacing it with a self-signed certificate or claiming a runtime pass. See [`../docs/flex-runtime-verification-boundary.md`](../docs/flex-runtime-verification-boundary.md).
 Otherwise, to complete the registration we recommend using the Anypoint Platform:
     1. Go to `Runtime Manager`
     2. Navigate to the `Flex Gateway` tab

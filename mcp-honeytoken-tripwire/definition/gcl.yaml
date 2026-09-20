@@ -9,12 +9,12 @@ metadata:
       A decoy tripwire for agent traffic. You plant a honeytoken — a fake
       credential, record, or identifier with NO legitimate use — in the data an
       agent can reach. This policy watches every request and every response
-      flowing through the gateway for that value. Because nothing legitimate
-      ever references it, a single match is a high-fidelity, near-zero-noise
-      signal that an agent has been compromised or is exfiltrating decoy data.
-      On a hit it emits a structured anomaly to the gateway logs (CISA "Expose")
-      and, in block mode, refuses the request and strips the token from any
-      response so the decoy never actually leaves (CISA "Affect").
+      flowing through the gateway for that value. A well-chosen decoy matched
+      appropriately to local traffic yields an event worth investigating; this
+      policy cannot establish that a match proves compromise. Matching is
+      presence-only, so a token quoted in ordinary text can trigger it. On a hit
+      it emits a structured anomaly and, in block mode, refuses eligible requests
+      and withholds or redacts eligible responses.
       Maps to NIST SP 800-53 Rev 5 SC-26 (Decoys) and SI-20 (Tainting), and
       NIST SP 800-160 Vol 2 Rev 1 cyber-resiliency Deception (Disinformation).
     metadata/capabilities/injectionPoint: inbound
@@ -36,6 +36,18 @@ spec:
         response containing one of these strings trips the wire. Plant the same
         value in the agent's reachable data (a decoy record, a seeded tool
         result) so a compromised agent can find and touch it.
+    decoyIds:
+      type: array
+      default: []
+      items:
+        type: string
+      description: >-
+        Opaque operator-assigned identifiers for honeytokens, in the same order as
+        honeytokens. These identifiers, never the token values or prefixes, are
+        emitted in anomaly events. Supply one unique identifier per token to retain
+        per-decoy correlation without disclosing a value in logs. An empty or omitted
+        list uses positional unlabeled-decoy-N labels; a nonempty list must have one
+        unique, nonblank identifier per honeytoken.
     mode:
       type: string
       default: monitor
