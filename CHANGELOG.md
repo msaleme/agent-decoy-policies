@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add `CITATION.cff` and a README citation section for the deposited preprint
+  (concept DOI `10.5281/zenodo.22859851`, current version v1.1
+  `10.5281/zenodo.22860118`), and
+  record which DOI to use for a tracking reference versus a pinned claim. Updates
+  the citation audit, which was written before the paper was DOI-minted. The
+  source citation anchor is unchanged: `v0.1.0-rc.1` / `f442cba`.
 - Verified Sentinel's exported Monitoring counts in a disposable Connected Mode
   Sandbox; see [evidence and cleanup](docs/CONNECTED-MONITORING-EVIDENCE.md).
 - Correct Honeytoken's monitor-mode safety and status descriptions; document

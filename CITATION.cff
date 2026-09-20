@@ -1,0 +1,48 @@
+cff-version: 1.2.0
+message: >-
+  If you use these policies, please cite the paper they implement (below). To cite
+  the source at a reproducible point, use the anchor tag v0.1.0-rc.1.
+title: "Agent Decoy Policies"
+abstract: >-
+  MuleSoft Flex/Omni Gateway custom policies (PDK, Rust to WebAssembly) implementing
+  three cyber-deception primitives over agent and Model Context Protocol message
+  bodies at a gateway enforcement point: a bidirectional honeytoken tripwire, a
+  decoy-tool sentinel, and a breadcrumb lure, with an opt-in coordinator for
+  deployments running more than one on the same exchange. Reference implementation
+  for the paper below. Not a compliance certification and not production-certified.
+type: software
+authors:
+  - family-names: Saleme
+    given-names: Michael K.
+    orcid: "https://orcid.org/0009-0003-6736-1900"
+repository-code: "https://github.com/msaleme/agent-decoy-policies"
+license: MIT
+version: "0.1.0-rc.1"
+date-released: "2026-09-20"
+keywords:
+  - cyber-deception
+  - honeytokens
+  - decoy-tools
+  - agent-security
+  - model-context-protocol
+  - api-gateway
+preferred-citation:
+  type: article
+  title: >-
+    Deception Primitives at an MCP-Aware Enforcement Point: A Bounded Reference
+    Design for Honeytoken, Decoy-Tool, and Breadcrumb Controls
+  authors:
+    - family-names: Saleme
+      given-names: Michael K.
+      orcid: "https://orcid.org/0009-0003-6736-1900"
+  year: 2026
+  month: 9
+  doi: "10.5281/zenodo.22859851"
+  url: "https://doi.org/10.5281/zenodo.22859851"
+  publisher:
+    name: Zenodo
+  notes: >-
+    Preprint, CC BY 4.0. This is the concept DOI and always resolves to the newest
+    version. To pin a claim to exact content, cite the version DOI instead. The
+    current version is 10.5281/zenodo.22860118 (v1.1, 2026-09-20); v1.0 is
+    10.5281/zenodo.22859852. Not peer-reviewed.
