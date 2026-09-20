@@ -1,0 +1,65 @@
+apiVersion: gateway.mulesoft.com/v1alpha1
+kind: Extension
+metadata:
+  labels:
+    title: Decoy Coordinator
+    category: Security
+    description: Coordinates original-body detections, required sanitization and final
+      response rescanning for bounded JSON-RPC exchanges.
+    metadata/capabilities/injectionPoint: inbound
+    metadata/interfaceScope: api,resource
+spec:
+  extends:
+  - name: extension-definition
+    namespace: default
+  properties:
+    honeytokens:
+      type: array
+      items:
+        type: string
+      default: []
+    decoyTools:
+      type: array
+      items:
+        type: string
+      default: []
+    breadcrumb:
+      type: string
+      default: ''
+    honeytokenMode:
+      type: string
+      enum:
+      - monitor
+      - block
+      default: block
+    sentinelMode:
+      type: string
+      enum:
+      - monitor
+      - block
+      default: block
+    breadcrumbMode:
+      type: string
+      enum:
+      - observe
+      - sanitize
+      - block
+      default: observe
+    seeding:
+      type: string
+      enum:
+      - disabled
+      - enabled
+      default: disabled
+    caseSensitive:
+      type: boolean
+      default: false
+  required:
+  - honeytokens
+  - decoyTools
+  - breadcrumb
+  - honeytokenMode
+  - sentinelMode
+  - breadcrumbMode
+  - seeding
+  - caseSensitive

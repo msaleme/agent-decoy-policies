@@ -22,11 +22,12 @@ below map one-to-one to CISA's decoy taxonomy.
 ## Current validation and support boundary
 
 The current remediation passes Rust unit tests, WebAssembly release builds, and bounded behavior tests
-on Flex 1.14.0 for all three policies. Exact results and issue-specific limits are tracked in
+on Flex 1.14.0 for the three standalone policies and the opt-in coordinator. Results and limits are tracked in
 [the remediation evidence](docs/REMEDIATION-EVIDENCE.md). These tests cover supported buffered bodies
 and explicit finite transport exclusions; they do not establish production effectiveness, general
-interoperability, or fail-closed guarantees after platform write failures. Monitoring export,
-actual-byte buffering limits, indefinite streams, and whole-chain composition remain open boundaries.
+interoperability, or fail-closed guarantees after platform write failures. Monitoring export, absolute deadlines for continuously active uploads, and response-stage
+double-write termination remain open boundaries. A bounded single-policy coordinator now
+implements composition; see [the remaining-issues plan](docs/REMAINING-ISSUES-PLAN.md).
 
 The current implementations process decoded bodies made available to the filter. They do not claim
 coverage for SSE or other streaming bodies, compressed or non-UTF-8 content, oversized bodies, URL paths,
@@ -37,11 +38,15 @@ say otherwise.
 
 | Policy | CISA primitive | What it does | NIST controls |
 |---|---|---|---|
-| [`mcp-honeytoken-tripwire`](./mcp-honeytoken-tripwire) | Honeytoken | Prototype for detecting configured values in decoded request/response bodies. Its current source and tests define the behavior; Flex request/response behavior is not yet integration-validated. | SC-26 (Decoys), SI-20 (Tainting), SI-4 |
-| [`decoy-tool-sentinel`](./decoy-tool-sentinel) | Decoy tool | Prototype for inspecting JSON-RPC `tools/call` objects and batches. A decoy hit atomically blocks an otherwise response-eligible batch in source-level unit coverage; Flex runtime behavior is not yet integration-validated. | SC-26 (Decoys), SC-30 (Concealment & Misdirection), SI-4 |
+| [`mcp-honeytoken-tripwire`](./mcp-honeytoken-tripwire) | Honeytoken | Detects configured values in decoded request/response bodies; bounded Flex tests cover denial, redaction, buffering and transport exclusions. | SC-26 (Decoys), SI-20 (Tainting), SI-4 |
+| [`decoy-tool-sentinel`](./decoy-tool-sentinel) | Decoy tool | Inspects JSON-RPC calls and batches; bounded Flex tests verify atomic blocking. Exported Monitoring metrics remain unverified. | SC-26 (Decoys), SC-30 (Concealment & Misdirection), SI-4 |
 | [`breadcrumb-misdirection`](./breadcrumb-misdirection) | Breadcrumb | Prototype for JSON tool-list/body transformations. Streaming/SSE and production response-rewrite semantics are outside the currently validated scope. | SC-30 (Concealment & Misdirection), SI-4 |
 
-All three are self-contained Rust implementations with no intentional outbound network calls. Their
+The opt-in [`decoy-coordinator`](./decoy-coordinator) combines these detectors in one
+extension for bounded single-envelope JSON-RPC, with terminal decisions before
+mutation and a final response scan. Its stricter contract is documented separately.
+
+The policies are self-contained Rust implementations with no intentional outbound network calls. Their
 configuration modes, logging, and headers are source-level features; operators should verify their
 gateway logging/SIEM and downstream-enforcement integration in their own environment. The presence of a
 decoy match is an alerting input, not an automatically proven security verdict.
@@ -98,7 +103,8 @@ governance, delegation-depth limiting, semantic cache) — none of which plant d
 agent-decoy-policies/
 ├── mcp-honeytoken-tripwire/     # honeytoken tripwire prototype
 ├── decoy-tool-sentinel/         # decoy MCP tool sentinel prototype
-└── breadcrumb-misdirection/     # breadcrumb lure prototype
+├── breadcrumb-misdirection/     # breadcrumb lure prototype
+└── decoy-coordinator/            # bounded coordinated composition
 ```
 
 Each project keeps the standard PDK structure: `definition/gcl.yaml` (config schema),

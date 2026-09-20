@@ -17,7 +17,7 @@ import subprocess
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-POLICIES = ("mcp-honeytoken-tripwire", "decoy-tool-sentinel", "breadcrumb-misdirection")
+POLICIES = ("mcp-honeytoken-tripwire", "decoy-tool-sentinel", "breadcrumb-misdirection", "decoy-coordinator")
 
 
 def paths(root, policy):

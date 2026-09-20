@@ -10,3 +10,5 @@ pub const COMMON_CONFIG_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/
 
 // Generated implementation extension name from `cargo anypoint gcl-gen` for this policy.
 pub const POLICY_NAME: &str = "mcp-honeytoken-tripwire-v1-0-impl";
+
+pub mod raw;

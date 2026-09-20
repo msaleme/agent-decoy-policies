@@ -29,7 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for policy in mcp-honeytoken-tripwire decoy-tool-sentinel breadcrumb-misdirection; do
+          for policy in mcp-honeytoken-tripwire decoy-tool-sentinel breadcrumb-misdirection decoy-coordinator; do
             (
               cd "$policy"
               cargo +1.89.0 fetch --locked

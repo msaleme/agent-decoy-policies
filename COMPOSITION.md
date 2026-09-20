@@ -38,12 +38,18 @@ preserved or removed correctly.
 
 ## Platform boundary
 
-Current Flex policy APIs do not provide an original-body snapshot shared across independent
-extensions, a decision-aggregation hook, or a final-chain callback. This repository therefore
-provides the individual policy contracts and this gateway-owned contract, but does **not** claim
-that placing all three extensions in an arbitrary Flex policy order enforces it. Deployments need
-a gateway composition feature or a single coordinating policy before treating multi-policy
-redaction as fail-closed.
+The opt-in [Decoy Coordinator](decoy-coordinator/README.md) implements these
+ordering and final-scan decisions inside one extension for bounded, unencoded,
+single-envelope JSON-RPC traffic. Its native tests and Local Mode Flex suites
+cover original-body decisions, sanitization, final seeding containment and forged
+headers. Its admission rules and non-expanding optional seeding are stricter than
+the standalone filters; see its configuration contract before migration.
+
+The three original independent filters still do not share original-body state or
+a final-chain callback. Arbitrary ordering of those filters is not equivalent to
+the coordinator. The PDK response-stage double-write termination limitation also
+remains: an outer component is still needed for unconditional containment when
+body replacement and empty-body fallback are both rejected.
 
 Streaming, compressed, non-UTF-8, and body classes outside an individual policy's documented
 admission boundary remain unsupported for composed security transformations.

@@ -85,3 +85,19 @@ cleanup after the bounded run.
 PDK response-stage double-write termination, pre-buffer actual-byte limits, SSE seeding, and
 cross-policy composition are still not proven by these fixtures. See
 [the issue/evidence checklist](REMEDIATION-EVIDENCE.md).
+
+## Current coordinator and lifecycle procedure
+
+The [remaining-issues plan](REMAINING-ISSUES-PLAN.md) records the newer coordinator
+and raw-socket verification. The asset gate now covers four policies. Use
+`--prepare --assets-only` for builds without registrations.
+
+Run policy runtime suites **serially** on a shared Docker daemon. PDK 1.10 cleanup
+selects shared test labels and can interfere with another process's containers.
+
+After authorized runtime tests, use the supported `flexctl registration delete`
+operation with `--file` pointing to that policy's disposable registration and the
+operator's authorized authentication. Capture its success before removing the
+local identity. Preserve only nonsecret name/ID/deletion evidence. For Local Mode,
+a name alone is insufficient for subsequent deletion. Older missing-ID cleanup
+is explicitly tracked in the remaining-issues plan.
