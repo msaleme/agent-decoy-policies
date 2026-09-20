@@ -1,4 +1,5 @@
-// Copyright (c) 2026 msaleme. Licensed under the MIT License.
+// Copyright 2026 Salesforce, Inc. All rights reserved.
+// Modifications Copyright (c) 2026 msaleme. Licensed under the MIT License.
 //
 // MCP Honeytoken Tripwire — a decoy tripwire for agent traffic.
 //
@@ -10,8 +11,8 @@
 //
 // This filter watches both directions of every exchange for the configured
 // honeytokens. On a hit it emits a structured anomaly to the gateway log
-// (CISA "Expose") and, in `block` mode, refuses the request and strips the token
-// from the response so the decoy never actually leaves (CISA "Affect").
+// (MITRE Engage "Expose") and, in `block` mode, refuses the request and strips the token
+// from the response so the decoy never actually leaves (MITRE Engage "Affect").
 //
 // NIST SP 800-53 Rev 5: SC-26 (Decoys), SI-20 (Tainting), SI-4 (Monitoring).
 // NIST SP 800-160 Vol 2 Rev 1: Deception (Disinformation), Analytic Monitoring.

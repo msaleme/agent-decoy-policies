@@ -1,4 +1,5 @@
-<!-- Copyright (c) 2026 msaleme. Licensed under the MIT License. -->
+<!-- Copyright 2026 Salesforce, Inc. All rights reserved. -->
+<!-- Modifications Copyright (c) 2026 msaleme. Licensed under the MIT License. -->
 # AGENTS.md
 
 Context for AI coding agents (Claude Code, Cursor, Codex, Aider, etc.) working in a project scaffolded from this template. Follows the [agents.md](https://agents.md) convention.
@@ -47,7 +48,7 @@ PDK runs on proxy-wasm — single-threaded inside the policy runtime. Code that 
 - **`unsafe`:** forbidden in policy code.
 - **`.unwrap()`:** avoid in production code.
 - **`src/generated/config.rs` is auto-generated** from the policy definition — never edit by hand; regenerate via the project's build tooling.
-- **License header:** every source file starts with `// Copyright (c) YYYY msaleme. Licensed under the MIT License.`
+- **License notices:** preserve existing upstream copyright and license notices. Add a separate MIT notice for project-authored modifications; never replace an upstream notice. See `../ATTRIBUTION.md`.
 
 ## Common pitfalls
 

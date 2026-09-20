@@ -1,4 +1,5 @@
-// Copyright (c) 2026 msaleme. Licensed under the MIT License.
+// Copyright 2026 Salesforce, Inc. All rights reserved.
+// Modifications Copyright (c) 2026 msaleme. Licensed under the MIT License.
 //
 // Decoy Tool Sentinel — a decoy MCP tool no honest agent should ever call.
 //
@@ -10,8 +11,8 @@
 // any execution indicates malicious activity").
 //
 // On a hit the filter emits a structured anomaly to the gateway log
-// (CISA "Expose") and, in `block` mode, refuses the call with a JSON-RPC error so
-// the decoy tool never executes (CISA "Affect").
+// (MITRE Engage "Expose") and, in `block` mode, refuses the call with a JSON-RPC error so
+// the decoy tool never executes (MITRE Engage "Affect").
 //
 // NIST SP 800-53 Rev 5: SC-26 (Decoys), SC-30 (Concealment & Misdirection),
 // SI-4 (Monitoring). NIST SP 800-160 Vol 2 Rev 1: Deception (Misdirection).

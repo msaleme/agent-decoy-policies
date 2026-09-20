@@ -1,4 +1,5 @@
-// Copyright (c) 2026 msaleme. Licensed under the MIT License.
+// Copyright 2026 Salesforce, Inc. All rights reserved.
+// Modifications Copyright (c) 2026 msaleme. Licensed under the MIT License.
 //
 // Breadcrumb Misdirection — a lure that reveals a hijacked agent's path.
 //
@@ -6,7 +7,7 @@
 // fake /admin/override endpoint, a decoy "internal" tool) — into the tool
 // descriptions an agent reads from `tools/list`. A healthy agent ignores it. A
 // prompt-injected or hijacked agent takes the bait and references the breadcrumb
-// in a later request. The gateway logs that follow (CISA "Expose") and strips the
+// in a later request. The gateway logs that follow (MITRE Engage "Expose") and strips the
 // breadcrumb out of the request so the lure never reaches a real upstream.
 //
 // This is Expose, NOT Elicit: it flags the follow and neutralizes it, it does not

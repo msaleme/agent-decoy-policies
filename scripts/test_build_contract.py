@@ -10,6 +10,18 @@ from flex_runtime_gate import ROOT, POLICIES, fixture_name
 
 
 class BuildContractTests(unittest.TestCase):
+    def test_unified_policy_descriptors_resolve_to_local_projects(self):
+        for policy in POLICIES:
+            with self.subTest(policy=policy):
+                folder = ROOT / policy
+                descriptor = yaml.safe_load((folder / '.project.yaml').read_text())
+                implementation = folder / descriptor['implementation']['ref']
+                self.assertTrue((implementation / 'Cargo.toml').is_file())
+                self.assertTrue((implementation / 'src/lib.rs').is_file())
+                self.assertEqual(descriptor['definition']['refMode'], 'filesystem')
+                definition = folder / descriptor['definition']['ref']
+                self.assertTrue((definition / 'gcl.yaml').is_file())
+
     def test_standard_make_generator_matches_runtime_fixture(self):
         for policy in POLICIES:
             with self.subTest(policy=policy), tempfile.TemporaryDirectory() as directory:
