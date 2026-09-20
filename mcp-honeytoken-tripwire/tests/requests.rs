@@ -540,3 +540,100 @@ async fn gateway_bounds_active_and_unknown_length_streams() -> anyhow::Result<()
     }
     Ok(())
 }
+
+#[pdk_test]
+async fn raw_framing_idle_upload_and_same_socket_reuse() -> anyhow::Result<()> {
+    let httpmock_config = HttpMockConfig::builder()
+        .port(80)
+        .version("latest")
+        .hostname("backend")
+        .build();
+    let policy_config = PolicyConfig::builder()
+        .name(POLICY_NAME)
+        .configuration(serde_json::json!({
+            "honeytokens": [HONEYTOKEN],
+            "decoyIds": ["integration-honeytoken"],
+            "mode": "block",
+            "alertHeader": "x-agent-decoy-tripwire",
+            "caseSensitive": false
+        }))
+        .build();
+    let api_config = ApiConfig::builder()
+        .name("myApi")
+        .upstream(&httpmock_config)
+        .path("/anything/echo/")
+        .port(FLEX_PORT)
+        .policies([policy_config])
+        .build();
+    let flex_config = FlexConfig::builder()
+        .version("1.14.0")
+        .hostname("local-flex")
+        .env([
+            ("FLEX_DOWNSTREAM_CONNECTION_BUFFER_LIMIT_BYTES", "4096"),
+            ("FLEX_UPSTREAM_RESPONSE_TIMEOUT_SECONDS", "1"),
+            ("FLEX_STREAM_IDLE_TIMEOUT_SECONDS", "1"),
+        ])
+        .with_api(api_config)
+        .config_mounts([
+            (POLICY_DIR, "custom-policies"),
+            (COMMON_CONFIG_DIR, "common"),
+        ])
+        .build();
+    let composite = TestComposite::builder()
+        .with_service(flex_config)
+        .with_service(httpmock_config)
+        .build()
+        .await?;
+
+    let flex: Flex = composite.service()?;
+    let flex_url = flex.external_url(FLEX_PORT).unwrap();
+    let httpmock: HttpMock = composite.service()?;
+    let mock_server = MockServer::connect_async(httpmock.socket()).await;
+
+    let clean = mock_server
+        .mock_async(|when, then| {
+            when.body("clean");
+            then.status(200)
+                .header("content-type", "text/plain")
+                .body("safe");
+        })
+        .await;
+    let never = mock_server
+        .mock_async(|when, then| {
+            when.any_request();
+            then.status(200).body("unexpected");
+        })
+        .await;
+    // This object owns one TCP stream; it has no reconnect mechanism.
+    let mut connection = raw::Connection::new(&flex_url)?;
+    let clean_wire=b"POST /anything/echo/ HTTP/1.1\r\nHost: localhost\r\nContent-Type: text/plain\r\nContent-Length: 5\r\n\r\nclean";
+    connection.send(clean_wire)?;
+    assert_eq!(connection.response()?, (200, b"safe".to_vec()));
+    let blocked=format!("POST /anything/echo/ HTTP/1.1\r\nHost: localhost\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",HONEYTOKEN.len(),HONEYTOKEN);
+    connection.send(blocked.as_bytes())?;
+    let (status, body) = connection.response()?;
+    assert_eq!(status, 403);
+    assert!(!String::from_utf8_lossy(&body).contains(HONEYTOKEN));
+    connection.send(clean_wire)?;
+    assert_eq!(connection.response()?, (200, b"safe".to_vec()));
+    clean.assert_hits_async(2).await;
+
+    for headers in [
+        "Content-Length: 8\r\nTransfer-Encoding: chunked",
+        "Content-Length: 8\r\nContent-Length: 9",
+    ] {
+        let mut conn = raw::Connection::new(&flex_url)?;
+        conn.send(format!("POST /anything/echo/ HTTP/1.1\r\nHost: localhost\r\nContent-Type: text/plain\r\n{headers}\r\n\r\n0\r\n\r\nsmuggled").as_bytes())?;
+        let (status, body) = conn.response()?;
+        assert_eq!(status, 400);
+        assert!(!String::from_utf8_lossy(&body).contains(HONEYTOKEN));
+    }
+    let mut slow = raw::Connection::new(&flex_url)?;
+    slow.send(b"POST /anything/echo/ HTTP/1.1\r\nHost: localhost\r\nContent-Type: text/plain\r\nContent-Length: 100\r\n\r\nsmuggled")?;
+    let start = std::time::Instant::now();
+    let (status, _) = slow.response()?;
+    assert_eq!(status, 408);
+    assert!(start.elapsed() < std::time::Duration::from_secs(5));
+    never.assert_hits_async(0).await;
+    Ok(())
+}
