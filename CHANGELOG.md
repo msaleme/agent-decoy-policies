@@ -2,8 +2,15 @@
 
 ## Unreleased
 
-No repository version tag or GitHub release has been published. This entry records
-the initial source baseline and its review changes; it does not backdate a release.
+Changes after the first source snapshot will be recorded here.
+
+## [v0.1.0-rc.1](https://github.com/msaleme/agent-decoy-policies/releases/tag/v0.1.0-rc.1) — 2026-09-20
+
+First repository-wide source prerelease. Includes Honeytoken Tripwire 1.0.0,
+Decoy Tool Sentinel 1.0.0, Breadcrumb Misdirection 1.0.0, and Decoy Coordinator
+0.1.0, built with Rust 1.89.0 and PDK 1.10.0. The repository tag identifies the
+family snapshot; it does not change those policy versions or establish an Exchange
+publication. No compiled release assets are included.
 
 ### Added
 
@@ -31,6 +38,10 @@ the initial source baseline and its review changes; it does not backdate a relea
 - Exported Anypoint Monitoring counts remain unverified.
 - Response containment on low-level host-write failure remains a PDK capability
   boundary; the optional request upload gate does not resolve it.
+- The exact original scaffold release remains unrecorded, and the original CISA
+  reference could not be independently revalidated. See [attribution](ATTRIBUTION.md).
+  This source snapshot preserves those uncertainties; it is not a complete binary
+  redistribution license inventory.
 
 See [verification status](docs/REMAINING-ISSUES-PLAN.md), individual policy contracts,
 and [release guidance](docs/RELEASING.md) before selecting a release snapshot.

@@ -1,11 +1,13 @@
 # Versioning and releases
 
-## Recommended first release
+## Adopted tag convention
 
-Use an **annotated repository tag `v0.1.0-rc.1`** for the first explicitly approved
-source snapshot, with a GitHub prerelease describing its tested scope. The family
-is still bounded by documented runtime limitations. This recommendation does not
-create a tag, publish binaries, submit to P4A, or deploy to Exchange.
+The first repository-wide source snapshot uses the **annotated tag
+`v0.1.0-rc.1`**, accompanied by a GitHub prerelease describing its tested scope.
+The family remains bounded by documented runtime and attribution limitations.
+Later family snapshots use `v<major>.<minor>.<patch>`, with prerelease suffixes
+while release-candidate validation is in progress. Tagging a source snapshot does
+not publish compiled assets, submit to P4A, or deploy to Exchange.
 
 Repository snapshot versions are separate from the versions in each policy's
 Cargo manifest. The snapshot includes all four projects:
@@ -27,6 +29,13 @@ notes and may require a major policy version change for existing consumers.
 If policy releases later have independent schedules, adopt explicit tags such as
 `decoy-coordinator/v0.2.0`. Do not use ambiguous unprefixed tags to represent only
 one policy in this repository.
+
+For policy releases, use semantic versioning: patch for compatible corrections,
+minor for compatible capabilities, and major for incompatible configuration or
+behavior changes. Admission changes that reject previously supported traffic need
+an explicit compatibility assessment. Keep policy tags aligned with the selected
+policy's Cargo version. Immutable annotated tags are the default; use signed tags
+when a maintainer signing setup is available.
 
 ## Preparing a source snapshot
 
