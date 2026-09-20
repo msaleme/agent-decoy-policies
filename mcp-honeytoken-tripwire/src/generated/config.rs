@@ -5,6 +5,8 @@ pub struct Config {
     pub alert_header: String,
     #[serde(alias = "caseSensitive")]
     pub case_sensitive: bool,
+    #[serde(alias = "decoyIds")]
+    pub decoy_ids: Option<Vec<String>>,
     #[serde(alias = "honeytokens")]
     pub honeytokens: Vec<String>,
     #[serde(alias = "mode")]

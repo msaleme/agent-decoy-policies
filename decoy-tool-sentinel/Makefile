@@ -1,4 +1,5 @@
-export PDK_COMPATIBILITY_VERSION = 1.4.0
+# Use definition-name + -impl consistently with the runtime fixtures.
+unexport PDK_COMPATIBILITY_VERSION
 TARGET                	:= wasm32-wasip1
 TARGET_DIR            	:= target/$(TARGET)/release
 CARGO_ANYPOINT        	:= cargo-anypoint
@@ -18,11 +19,11 @@ ifeq ($(OS), Windows_NT)
 	else
 		ANYPOINT_METADATA_JSON  = $(shell cargo anypoint get-anypoint-metadata)
 	endif
-	POLICY_REF_NAME = $(shell $$env:PDK_COMPATIBILITY_VERSION="$(PDK_COMPATIBILITY_VERSION)"; cargo anypoint get-policy-implementation-name)
 else
 	ANYPOINT_METADATA_JSON  = $(shell cargo anypoint get-anypoint-metadata)
-	POLICY_REF_NAME = $(shell export PDK_COMPATIBILITY_VERSION=$(PDK_COMPATIBILITY_VERSION); cargo anypoint get-policy-implementation-name)
 endif
+
+POLICY_REF_NAME = $(DEFINITION_NAME)-impl
 
 .PHONY: setup
 setup: install-cargo-anypoint install-llvm-cov ## Setup Cargo Anypoint to build, LLVM-cov for coverage

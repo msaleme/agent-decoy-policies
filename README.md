@@ -6,11 +6,11 @@ meaningful in their own environment; this repository does not establish that a p
 legitimate use or that a match alone proves compromise. The gateway is a useful enforcement point, but
 deployment needs an operator-defined response and false-positive review path.
 
-Inspired by CISA's *[Using Cyber Decoys to Strengthen Detection and Response](https://www.cisa.gov/sites/default/files/2026-09/using-cyber-decoys-to-strengthen-detection-and-response_508c.pdf)*
-(TLP:CLEAR, 2026) and grounded in NIST controls. These policies stay firmly in CISA's **Expose**
-(detect) and **Affect** (impose cost) tiers — they flag and neutralize. They deliberately do **not**
-implement **Elicit** (building a fake environment to entrap and study an adversary), which CISA flags as
-an advanced technique with legal risk that does not belong in a general-purpose gateway policy.
+Inspired by the CISA decoys guidance and informed by **MITRE Engage's** Expose, Affect, and
+Elicit engagement-goal vocabulary. These policies detect and optionally neutralize traffic; they
+do not implement a controlled decoy environment. See [COMPOSITION.md](./COMPOSITION.md) before
+chaining policies: independent Flex extensions cannot themselves guarantee ordered, fail-closed
+multi-policy transformations.
 
 ## Why deception at the gateway
 
@@ -21,11 +21,12 @@ below map one-to-one to CISA's decoy taxonomy.
 
 ## Current validation and support boundary
 
-The source has Rust unit tests and WebAssembly release-build evidence. The generated Docker/Flex request
-fixtures are currently under repair: they do not yet provide passing policy-behavior integration evidence.
-Accordingly, this repository makes **no production-effectiveness, interoperability, or fail-closed claim**
-for a Flex deployment. Treat these projects as implementation prototypes until the policy-specific Flex
-test matrix is passing and published.
+The current remediation passes Rust unit tests, WebAssembly release builds, and bounded behavior tests
+on Flex 1.14.0 for all three policies. Exact results and issue-specific limits are tracked in
+[the remediation evidence](docs/REMEDIATION-EVIDENCE.md). These tests cover supported buffered bodies
+and explicit finite transport exclusions; they do not establish production effectiveness, general
+interoperability, or fail-closed guarantees after platform write failures. Monitoring export,
+actual-byte buffering limits, indefinite streams, and whole-chain composition remain open boundaries.
 
 The current implementations process decoded bodies made available to the filter. They do not claim
 coverage for SSE or other streaming bodies, compressed or non-UTF-8 content, oversized bodies, URL paths,

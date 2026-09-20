@@ -3,13 +3,16 @@
 > Part of the [Agent Decoy Policies](../README.md) family. CISA primitive: **decoy tool**.
 > NIST SP 800-53 Rev 5 **SC-26** (Decoys), **SC-30** (Concealment & Misdirection), **SI-4**. OWASP **LLM06**.
 
-You wire a tool into the fabric that has **no legitimate use** — `dump_all_records`, `export_secrets`,
-`disable_audit` — and register its name here. Because no real workflow ever calls it, a single MCP
-`tools/call` naming that tool is an unambiguous, high-fidelity signal that an agent has been hijacked or
-is probing for reach. (CISA's example: a fake network-scanning tool on a nontechnical user's box — any
-execution indicates malicious activity.)
+You wire an **inert** tool into the fabric that has no legitimate use, then register its
+exact unique name here. The registered implementation **must perform no privileged action,
+export, authorization or logging change, state mutation, or external side effect**; it should
+return a plausible but inconsequential result. Do not reuse the name of a real tool anywhere in
+the fabric. This is mandatory even in `monitor` mode: monitor intentionally forwards the decoy
+call, and a gateway enforcement point can be bypassed or misconfigured. A well-chosen inert
+decoy whose invocation is reviewed in its local operating context yields an event worth
+investigating; this repository cannot establish that a particular call proves compromise.
 
-The sentinel inspects only a complete MCP/JSON-RPC 2.0 request body—one request object or a non-empty batch whose members are all JSON-RPC 2.0 requests—and fires **only on `tools/call`** of a decoy name. Malformed, non-JSON-RPC, and mixed-invalid inputs pass through. It never fires on `tools/list`, so the decoy stays discoverable in the catalog (the bait) while only *calling* it is the signal.
+The sentinel inspects only a complete MCP/JSON-RPC 2.0 request body—one request, notification, or client response object, or a non-empty batch of these messages—and fires **only on `tools/call`** of a decoy name. In block mode, malformed, duplicate-member, non-JSON-RPC, and mixed-invalid bodies are rejected with generic HTTP `400`; they never reach upstream. Monitor leaves these ambiguous bodies unchanged without claiming a decoy verdict. Valid client result/error responses pass unchanged without a decoy verdict, including responses to server-initiated requests. IDs must be strings, numbers, or null; request params must be structured, and `tools/call` requires object params with a string `name` and optional object `arguments`. Request and response fields cannot be combined, and error responses require an integer code and string message. It never fires on `tools/list`, so the decoy stays discoverable in the catalog (the bait) while only *calling* it is the signal.
 
 - **`monitor`** (Expose) — emit the anomaly, stamp the alert header, let the call proceed.
 - **`block`** (Affect) — refuse the call with a JSON-RPC error (`-32008`) so the decoy never executes. A response-bearing JSON-RPC request receives HTTP `200` with an `application/json` error envelope; a notification-only input receives HTTP `202` with no body.
@@ -24,7 +27,7 @@ The sentinel inspects only a complete MCP/JSON-RPC 2.0 request body—one reques
 
 ```yaml
 - policyRef:
-    name: decoy-tool-sentinel-flex
+    name: decoy-tool-sentinel-flex-v1-0-impl
   config:
     decoyTools:
       - "dump_all_records"
@@ -41,7 +44,16 @@ Sentinel emits the same control mapping in either mode, with action reflecting t
 - block: `{"event":"agent_decoy_tool_call","control":"NIST SC-26/SC-30/SI-4","tool":"dump_all_records","action":"blocked"}`
 - monitor: `{"event":"agent_decoy_tool_call","control":"NIST SC-26/SC-30/SI-4","tool":"dump_all_records","action":"flagged"}`
 
-The policy uses HTTP 403 for response-bearing block decisions and HTTP 204 with no body for notification-only input. The MCP client transport-compatibility contract is tracked separately in #7; no client interoperability claim is made here.
+Response-bearing decoy denials use HTTP `200` with JSON-RPC errors; notification-only denials use HTTP `202` without a body. Every detected decoy call, in monitor or block mode, calls PDK's `generate_policy_violation()` once per request; clean and uninspectable calls do not. Local tests observe this property; Flex analytics/export behavior remains unverified. PDK stores one active violation per request: this call replaces an earlier violation, and a later policy may replace this one. Policy ordering therefore determines the reported violation; the alert header is not trusted monitoring evidence.
+
+A detected decoy causes atomic rejection of its entire batch. Only request IDs receive error replies; notifications and client responses never receive JSON-RPC replies. A rejected batch with no request IDs receives HTTP `202` with no body.
+
+Batch coverage is generic JSON-RPC / legacy MCP compatibility, not a claim about current MCP clients. No client interoperability claim is made here.
+
+### Body admission
+
+When decoys are configured, inspection requires an explicit decimal `Content-Length` at most 64 KiB, an `application/json` or `application/*+json` media type, and no `Content-Encoding`. Actual buffered length must match the declared length. Block rejects ineligible bodies with HTTP `415`; monitor forwards them uninspected. Bodyless traffic passes. This eligibility gate is not a pre-buffering actual-byte memory cap. Streaming/SSE, compression, and non-JSON traffic are not inspected by Sentinel. Deploy it on the intended JSON-RPC endpoint.
+
 
 ---
 
@@ -73,7 +85,7 @@ Since the source code must be in sync with the policy definition configurations,
 
 ### Run
 The `make run` goal provides a simple way to execute the current build of the policy in a Docker containerized environment. In order to run this goal, the `playground/config` directory must contain a set of files required for executing the policy in a Flex Gateway instance:
-- A `registration.yaml` file generated by performing a Flex Gateway registration in Local Mode. If you already have an instance registered in Local mode, you can reuse the registration file you have and copy it in the `playground/config` folder.
+- A `registration.yaml` generated for a **local, disposable** Flex Gateway registration. It contains client-identity material: keep it untracked, do not copy it between projects or machines, and never commit it. If no local registration is available, treat Docker runtime verification as blocked rather than replacing it with a self-signed certificate or claiming a runtime pass. See [`../docs/flex-runtime-verification-boundary.md`](../docs/flex-runtime-verification-boundary.md).
 Otherwise, to complete the registration we recommend using the Anypoint Platform:
     1. Go to `Runtime Manager`
     2. Navigate to the `Flex Gateway` tab

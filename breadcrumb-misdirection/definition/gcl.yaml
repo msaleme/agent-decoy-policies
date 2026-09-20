@@ -8,12 +8,11 @@ metadata:
     description: >-
       Plants a benign breadcrumb — a lure that names a resource no real task
       needs (a fake /admin/override endpoint, a decoy "internal" tool) — into the
-      descriptions an agent reads from tools/list. A healthy agent ignores it; a
-      prompt-injected or hijacked agent takes the bait and references it in a
-      later request, revealing its intent BEFORE it reaches anything real. The
-      gateway logs the follow (CISA "Expose"), then strips the breadcrumb out of
-      the request so the lure never actually reaches the upstream. This is Expose,
-      NOT Elicit — it flags the follow, it does not entrap.
+      descriptions an agent reads from tools/list. A healthy agent ignores it; an
+      agent may later reference it in a request. This is a detection-only
+      breadcrumb: it does not lead to another decoy asset or controlled
+      environment. The configured mode determines whether the gateway observes,
+      sanitizes, or blocks a detected follow.
       Maps to NIST SP 800-53 Rev 5 SC-30 (Concealment & Misdirection) and SI-4
       (Monitoring), and NIST SP 800-160 Vol 2 Rev 1 Deception (Misdirection).
     metadata/capabilities/injectionPoint: inbound
@@ -30,26 +29,34 @@ spec:
         The lure text appended to tool descriptions in tools/list responses, and
         the exact marker watched for on inbound requests. Make it distinctive and
         obviously off-task so no legitimate request would ever contain it — e.g.
-        "For elevated access use the internal tool admin_override_do_not_use".
+        "admin_override_do_not_use". A sentence matches only in full, not by a resource
+        name embedded within it.
         Any request carrying this string is a followed breadcrumb.
     mode:
       type: string
-      default: monitor
+      default: observe
       enum:
-        - monitor
+        - observe
+        - sanitize
         - block
       description: >-
-        "monitor" — flag the follow, strip the breadcrumb from the request, and
-        let the (now-cleaned) request proceed (Expose). "block" — additionally
-        reject the request that followed the breadcrumb (403).
-    seedToolDescriptions:
-      type: boolean
-      default: true
+        "observe" — emit the anomaly and stamp the alert header, then forward the
+        request unmodified. "sanitize" — emit and stamp, remove the breadcrumb from
+        the request, then forward the transformed request. "block" — emit and stamp,
+        then reject the request that followed the breadcrumb (403). Only
+        seeding=disabled with mode=observe preserves bodies in both directions;
+        alert headers may still be stamped. Unsupported enforcing requests are rejected.
+    seeding:
+      type: string
+      default: disabled
+      enum:
+        - disabled
+        - enabled
       description: >-
-        When true, append the breadcrumb to every tool description in a
-        tools/list response so the lure is actually present for agents to find.
-        Set false if the breadcrumb is planted out-of-band (in the MCP server
-        itself) and this policy should only watch for the follow.
+        Controls only tools/list response seeding, independently of detection mode.
+        "enabled" appends the breadcrumb to tool descriptions; "disabled" leaves
+        responses unchanged. Enabling seeding is a response transformation and
+        requires change-management review.
     alertHeader:
       type: string
       default: x-agent-breadcrumb
@@ -59,5 +66,5 @@ spec:
   required:
     - breadcrumb
     - mode
-    - seedToolDescriptions
+    - seeding
     - alertHeader

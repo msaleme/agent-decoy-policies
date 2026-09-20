@@ -19,7 +19,7 @@ A custom policy for [MuleSoft Flex Gateway](https://docs.mulesoft.com/gateway/) 
 │   ├── requests.rs              # Integration tests (pdk-test, requires Docker)
 │   ├── common/mod.rs
 │   └── config/
-│       └── note.txt             # Drop your registration.yaml here per these instructions
+│       └── note.txt             # See docs/flex-runtime-verification-boundary.md
 ├── playground/                  # `make run` artifacts: local Flex Gateway + sample backend
 │   ├── docker-compose.yaml      # Spins up Flex Gateway and a backend container
 │   └── config/
@@ -56,7 +56,7 @@ These cause real bugs in production policies. Watch for them before writing code
 - **State machine consumes ownership.** `RequestState` → `RequestHeadersState` → `RequestBodyState` (and the response-side equivalents) each transition consumes the previous state. Read everything you need from headers before transitioning to the body — you cannot go back.
 - **Check `contains_body()` before reading or writing the body.** On a bodyless request (GET, HEAD, empty POST) `.body()` returns an empty buffer, and writes to it will not reach upstream — you can't add a body that wasn't there in the first place.
 - **Definition defaults arrive pre-filled.** Flex Gateway applies `default` values from the policy definition before the configuration bytes reach the policy, so a `required: true` property with a `default` is never absent at parse time. Do not write code that branches on "missing required field".
-- **Always include the raw config bytes in parse-error logs** (via `String::from_utf8_lossy`). Without them the operator cannot debug why the policy refused to load.
+- **Never log raw configuration bytes.** Configuration can contain honeytokens or other sensitive values. Report a parse category/location without echoing config contents.
 - **`Flow::Break(response)` rejects, `Flow::Continue(())` allows.** Inverting these is a security hole: an auth filter that returns `Continue` on failure passes the unauthenticated request to the upstream.
 - **Response filter must handle `RequestData::Break`.** If the request was rejected by an earlier filter, the response filter receives `Break(response)`, not `Continue(data)`. `.unwrap()` on a `Break` will crash.
 - **Header names are case-insensitive.** Lowercase both sides before comparing (`name.to_ascii_lowercase()`); production policies do this consistently.
@@ -67,3 +67,7 @@ These cause real bugs in production policies. Watch for them before writing code
 - PDK documentation — https://docs.mulesoft.com/pdk/latest/
 - Flex Gateway documentation — https://docs.mulesoft.com/gateway/
 - Public policy examples — https://github.com/mulesoft/pdk-custom-policy-examples
+
+## Local runtime evidence
+
+Follow `../docs/flex-runtime-verification-boundary.md`. Registration identity material must remain local, disposable, and untracked. Provisioning requires explicit user authorization; never display it or copy it between projects. Without a valid authorized identity, record Flex behavior verification as blocked. The current bounded Sandbox runs were authorized; see the runtime evidence and local lifecycle records.

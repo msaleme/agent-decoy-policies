@@ -21,6 +21,11 @@ use anyhow::{anyhow, Result};
 
 use pdk::hl::*;
 use pdk::logger;
+use pdk::policy_violation::PolicyViolations;
+use serde::{
+    de::{self, MapAccess, SeqAccess, Visitor},
+    Deserialize,
+};
 use serde_json::{json, Value};
 
 use crate::generated::config::Config;
@@ -45,6 +50,59 @@ struct ParsedCalls {
     response_ids: Vec<Value>,
 }
 
+/// Deserialize JSON while rejecting a duplicate member in any object. This avoids
+/// parser-differential JSON-RPC admission decisions before a map-backed Value is built.
+struct NoDuplicateMembers;
+
+impl<'de> Deserialize<'de> for NoDuplicateMembers {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(NoDuplicateVisitor)
+    }
+}
+
+struct NoDuplicateVisitor;
+impl<'de> Visitor<'de> for NoDuplicateVisitor {
+    type Value = NoDuplicateMembers;
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("JSON with no duplicate object members")
+    }
+    fn visit_bool<E: de::Error>(self, _: bool) -> Result<Self::Value, E> {
+        Ok(NoDuplicateMembers)
+    }
+    fn visit_i64<E: de::Error>(self, _: i64) -> Result<Self::Value, E> {
+        Ok(NoDuplicateMembers)
+    }
+    fn visit_u64<E: de::Error>(self, _: u64) -> Result<Self::Value, E> {
+        Ok(NoDuplicateMembers)
+    }
+    fn visit_f64<E: de::Error>(self, _: f64) -> Result<Self::Value, E> {
+        Ok(NoDuplicateMembers)
+    }
+    fn visit_str<E: de::Error>(self, _: &str) -> Result<Self::Value, E> {
+        Ok(NoDuplicateMembers)
+    }
+    fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+        Ok(NoDuplicateMembers)
+    }
+    fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+        Ok(NoDuplicateMembers)
+    }
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+        while seq.next_element::<NoDuplicateMembers>()?.is_some() {}
+        Ok(NoDuplicateMembers)
+    }
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        let mut keys = std::collections::HashSet::new();
+        while let Some(key) = map.next_key::<String>()? {
+            if !keys.insert(key) {
+                return Err(de::Error::custom("duplicate JSON object member"));
+            }
+            map.next_value::<NoDuplicateMembers>()?;
+        }
+        Ok(NoDuplicateMembers)
+    }
+}
+
 impl Sentinel {
     fn from_config(config: &Config) -> Self {
         Self {
@@ -59,11 +117,11 @@ impl Sentinel {
         }
     }
 
-    /// Parses a complete JSON-RPC 2.0 request object or batch, preserving batch
-    /// shape and response IDs for protocol-valid block responses. Malformed,
-    /// non-JSON-RPC, and mixed-invalid input remains outside this policy's
-    /// interception contract.
+    /// Parses complete JSON-RPC 2.0 requests, notifications, responses or batches, preserving batch
+    /// shape and response IDs for protocol-valid block responses. Ambiguous or
+    /// malformed input is rejected generically in block mode.
     fn called_tools(body: &[u8]) -> Option<ParsedCalls> {
+        serde_json::from_slice::<NoDuplicateMembers>(body).ok()?;
         let root: Value = serde_json::from_slice(body).ok()?;
         let is_batch = matches!(root, Value::Array(_));
         let items: Vec<&Value> = match &root {
@@ -72,30 +130,63 @@ impl Sentinel {
             _ => return None,
         };
 
-        if items.iter().any(|item| {
-            item.get("jsonrpc").and_then(Value::as_str) != Some("2.0")
-                || item.get("method").and_then(Value::as_str).is_none()
-        }) {
-            return None;
-        }
-
-        let response_ids = items
-            .iter()
-            .filter_map(|value| value.get("id").cloned())
-            .collect();
-        let calls = items
-            .into_iter()
-            .filter_map(|value| {
-                if value.get("method")?.as_str()? != "tools/call" {
+        let mut response_ids = Vec::new();
+        let mut calls = Vec::new();
+        for item in items {
+            let object = item.as_object()?;
+            if object.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
+                return None;
+            }
+            let id = object.get("id");
+            if id.is_some_and(|id| !matches!(id, Value::Null | Value::String(_) | Value::Number(_)))
+            {
+                return None;
+            }
+            if let Some(method) = object.get("method") {
+                let method = method.as_str()?;
+                if object.contains_key("result") || object.contains_key("error") {
                     return None;
                 }
-                value
-                    .get("params")?
-                    .get("name")?
-                    .as_str()
-                    .map(str::to_owned)
-            })
-            .collect();
+                if object
+                    .get("params")
+                    .is_some_and(|params| !params.is_object() && !params.is_array())
+                {
+                    return None;
+                }
+                if method == "tools/call" {
+                    let params = object.get("params")?.as_object()?;
+                    let name = params.get("name")?.as_str()?;
+                    if params
+                        .get("arguments")
+                        .is_some_and(|args| !args.is_object())
+                    {
+                        return None;
+                    }
+                    calls.push(name.to_owned());
+                }
+                if let Some(id) = id {
+                    response_ids.push(id.clone());
+                }
+            } else {
+                // Client replies to server requests travel over the same MCP POST
+                // endpoint. They are not calls and must never receive another reply.
+                if id.is_none()
+                    || object.contains_key("params")
+                    || object.contains_key("result") == object.contains_key("error")
+                {
+                    return None;
+                }
+                if let Some(error) = object.get("error") {
+                    let error = error.as_object()?;
+                    let code = error.get("code")?;
+                    if (!code.is_i64() && !code.is_u64())
+                        || error.get("message").and_then(Value::as_str).is_none()
+                    {
+                        return None;
+                    }
+                }
+            }
+        }
 
         Some(ParsedCalls {
             is_batch,
@@ -117,25 +208,65 @@ fn emit_anomaly(tool: &str, action: &str) {
     logger::warn!("{event}");
 }
 
-async fn request_filter(request_state: RequestState, sentinel: &Sentinel) -> Flow<()> {
+async fn request_filter(
+    request_state: RequestState,
+    sentinel: &Sentinel,
+    violations: &PolicyViolations,
+) -> Flow<()> {
     if sentinel.decoy_tools.is_empty() {
         return Flow::Continue(());
     }
 
-    let state = request_state
-        .into_headers_state()
-        .await
-        .into_headers_body_state()
-        .await;
-    let handler = state.handler();
-
-    let body = handler.body();
-    if body.is_empty() {
+    let headers = request_state.into_headers_state().await;
+    if !headers.contains_body() {
         return Flow::Continue(());
+    }
+    let length = headers
+        .handler()
+        .header("content-length")
+        .filter(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()))
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|n| *n <= 64 * 1024);
+    let json = headers
+        .handler()
+        .header("content-type")
+        .is_some_and(|value| {
+            let media = value
+                .split(';')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase();
+            media == "application/json"
+                || (media.starts_with("application/") && media.ends_with("+json"))
+        });
+    if length.is_none() || !json || headers.handler().header("content-encoding").is_some() {
+        return if sentinel.block {
+            Flow::Break(Response::new(415).with_body("request body cannot be safely inspected"))
+        } else {
+            Flow::Continue(())
+        };
+    }
+    let state = headers.into_headers_body_state().await;
+    let handler = state.handler();
+    let body = handler.body();
+    if Some(body.len()) != length || body.len() > 64 * 1024 {
+        return if sentinel.block {
+            Flow::Break(Response::new(415).with_body("request body framing is invalid"))
+        } else {
+            Flow::Continue(())
+        };
     }
 
     let parsed = match Sentinel::called_tools(&body) {
         Some(parsed) => parsed,
+        None if sentinel.block => {
+            return Flow::Break(
+                Response::new(400)
+                    .with_headers([("Content-Type".to_string(), "application/json".to_string())])
+                    .with_body(json!({"error":"request is not unambiguous JSON-RPC"}).to_string()),
+            )
+        }
         None => return Flow::Continue(()),
     };
     let tool = match parsed
@@ -150,6 +281,8 @@ async fn request_filter(request_state: RequestState, sentinel: &Sentinel) -> Flo
     let action = if sentinel.block { "blocked" } else { "flagged" };
     emit_anomaly(tool, action);
     handler.set_header(&sentinel.alert_header, "fired");
+
+    violations.generate_policy_violation();
 
     if sentinel.block {
         if parsed.response_ids.is_empty() {
@@ -206,12 +339,17 @@ async fn request_filter(request_state: RequestState, sentinel: &Sentinel) -> Flo
 }
 
 #[entrypoint]
-async fn configure(launcher: Launcher, Configuration(bytes): Configuration) -> Result<()> {
+async fn configure(
+    launcher: Launcher,
+    Configuration(bytes): Configuration,
+    violations: PolicyViolations,
+) -> Result<()> {
     let config: Config = serde_json::from_slice(&bytes).map_err(|err| {
         anyhow!(
-            "Failed to parse configuration '{}'. Cause: {}",
-            String::from_utf8_lossy(&bytes),
-            err
+            "Invalid policy configuration at line {}, column {} ({:?})",
+            err.line(),
+            err.column(),
+            err.classify()
         )
     })?;
 
@@ -222,17 +360,17 @@ async fn configure(launcher: Launcher, Configuration(bytes): Configuration) -> R
         if sentinel.block { "block" } else { "monitor" }
     );
 
-    let filter = on_request(|rs| request_filter(rs, &sentinel));
+    let filter = on_request(|rs| request_filter(rs, &sentinel, &violations));
     launcher.launch(filter).await?;
     Ok(())
 }
 
 #[cfg(test)]
 mod test {
+    use super::MCP_BLOCKED_CODE;
     use pdk_unit::{
         TraceBackend, UnitHttpMessage, UnitHttpRequest, UnitHttpResponse, UnitTestBuilder,
     };
-    use super::MCP_BLOCKED_CODE;
     use serde_json::{json, Value};
     use std::rc::Rc;
 
@@ -282,7 +420,7 @@ mod test {
             .with_backend(ok_backend)
             .with_entrypoint(super::configure);
 
-        let response = tester.request(UnitHttpRequest::post().with_body(tools_call("get_orders")));
+        let response = tester.request(json_request(tools_call("get_orders")));
         assert_eq!(response.status_code(), 200);
     }
 
@@ -296,7 +434,7 @@ mod test {
             .with_entrypoint(super::configure);
 
         let body = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).to_string();
-        let response = tester.request(UnitHttpRequest::post().with_body(body));
+        let response = tester.request(json_request(body));
         assert_eq!(response.status_code(), 200);
     }
 
@@ -307,10 +445,14 @@ mod test {
             .with_backend(ok_backend)
             .with_entrypoint(super::configure);
 
-        let response = tester.request(UnitHttpRequest::post().with_body(tools_call(DECOY)));
-        assert_eq!(response.status_code(), 200, "response-bearing MCP requests receive an in-band JSON-RPC error");
+        let response = tester.request(json_request(tools_call(DECOY)));
+        assert_eq!(
+            response.status_code(),
+            200,
+            "response-bearing MCP requests receive an in-band JSON-RPC error"
+        );
         assert_eq!(response.header("content-type"), Some("application/json"));
-        let body = String::from_utf8_lossy(&response.body()).to_string();
+        let body = String::from_utf8_lossy(response.body()).to_string();
         assert!(body.contains("-32008"), "expected JSON-RPC block error");
         assert!(body.contains(DECOY));
     }
@@ -327,13 +469,21 @@ mod test {
             {"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": DECOY, "arguments": {}}}
         ])
         .to_string();
-        let response = tester.request(UnitHttpRequest::post().with_body(batch));
+        let response = tester.request(json_request(batch));
 
-        assert_eq!(response.status_code(), 200, "a response-bearing batch receives an in-band JSON-RPC error array");
+        assert_eq!(
+            response.status_code(),
+            200,
+            "a response-bearing batch receives an in-band JSON-RPC error array"
+        );
         assert_eq!(response.header("content-type"), Some("application/json"));
-        let body: Value = serde_json::from_slice(&response.body()).expect("batch response is JSON");
+        let body: Value = serde_json::from_slice(response.body()).expect("batch response is JSON");
         let errors = body.as_array().expect("batch response is an array");
-        assert_eq!(errors.len(), 2, "atomic rejection returns one error per request id");
+        assert_eq!(
+            errors.len(),
+            2,
+            "atomic rejection returns one error per request id"
+        );
         assert!(errors.iter().all(|error| error["error"]["code"] == -32008));
         assert!(errors.iter().any(|error| error["id"] == 3));
         assert!(errors.iter().any(|error| error["id"] == 9));
@@ -351,7 +501,7 @@ mod test {
             {"jsonrpc": "2.0", "id": 4, "method": "tools/list", "params": {}}
         ])
         .to_string();
-        let response = tester.request(UnitHttpRequest::post().with_body(batch));
+        let response = tester.request(json_request(batch));
 
         assert_eq!(response.status_code(), 200);
     }
@@ -368,7 +518,7 @@ mod test {
             {"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": DECOY, "arguments": {}}}
         ])
         .to_string();
-        let response = tester.request(UnitHttpRequest::post().with_body(batch));
+        let response = tester.request(json_request(batch));
 
         assert_eq!(response.status_code(), 200);
         let forwarded = backend.next().unwrap();
@@ -376,7 +526,7 @@ mod test {
     }
 
     #[test]
-    fn malformed_jsonrpc_batch_passes_without_false_block() {
+    fn malformed_jsonrpc_batch_is_rejected() {
         let backend = Rc::new(TraceBackend::new(ok_backend));
         let mut tester = UnitTestBuilder::default()
             .with_config(block_config())
@@ -388,14 +538,17 @@ mod test {
             "not an object"
         ])
         .to_string();
-        let response = tester.request(UnitHttpRequest::post().with_body(batch));
+        let response = tester.request(json_request(batch));
 
-        assert_eq!(response.status_code(), 200);
-        assert!(backend.next().is_some(), "malformed input must continue upstream");
+        assert_eq!(response.status_code(), 400);
+        assert!(
+            backend.next().is_none(),
+            "malformed input must not reach upstream"
+        );
     }
 
     #[test]
-    fn non_jsonrpc_decoy_shaped_body_passes_without_false_block() {
+    fn non_jsonrpc_decoy_shaped_body_is_rejected() {
         let backend = Rc::new(TraceBackend::new(ok_backend));
         let mut tester = UnitTestBuilder::default()
             .with_config(block_config())
@@ -408,14 +561,17 @@ mod test {
             "params": {"name": DECOY, "arguments": {}}
         })
         .to_string();
-        let response = tester.request(UnitHttpRequest::post().with_body(body));
+        let response = tester.request(json_request(body));
 
-        assert_eq!(response.status_code(), 200);
-        assert!(backend.next().is_some(), "non-JSON-RPC traffic must continue upstream");
+        assert_eq!(response.status_code(), 400);
+        assert!(
+            backend.next().is_none(),
+            "non-JSON-RPC traffic must not reach upstream"
+        );
     }
 
     #[test]
-    fn mixed_non_jsonrpc_batch_with_decoy_passes_without_false_block() {
+    fn mixed_non_jsonrpc_batch_with_decoy_is_rejected() {
         let backend = Rc::new(TraceBackend::new(ok_backend));
         let mut tester = UnitTestBuilder::default()
             .with_config(block_config())
@@ -427,10 +583,13 @@ mod test {
             {"id": 9, "method": "tools/call", "params": {"name": DECOY, "arguments": {}}}
         ])
         .to_string();
-        let response = tester.request(UnitHttpRequest::post().with_body(batch));
+        let response = tester.request(json_request(batch));
 
-        assert_eq!(response.status_code(), 200);
-        assert!(backend.next().is_some(), "a mixed invalid batch must continue upstream");
+        assert_eq!(response.status_code(), 400);
+        assert!(
+            backend.next().is_none(),
+            "a mixed invalid batch must not reach upstream"
+        );
     }
 
     #[test]
@@ -446,9 +605,13 @@ mod test {
             "params": {"name": DECOY, "arguments": {}}
         })
         .to_string();
-        let response = tester.request(UnitHttpRequest::post().with_body(notification));
+        let response = tester.request(json_request(notification));
 
-        assert_eq!(response.status_code(), 202, "accepted MCP notifications return 202 with no body");
+        assert_eq!(
+            response.status_code(),
+            202,
+            "accepted MCP notifications return 202 with no body"
+        );
         assert!(response.body().is_empty());
     }
 
@@ -464,16 +627,23 @@ mod test {
             {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "get_orders", "arguments": {}}}
         ])
         .to_string();
-        let response = tester.request(UnitHttpRequest::post().with_body(batch));
+        let response = tester.request(json_request(batch));
 
-        assert_eq!(response.status_code(), 200, "a response-bearing batch receives an in-band JSON-RPC error array");
+        assert_eq!(
+            response.status_code(),
+            200,
+            "a response-bearing batch receives an in-band JSON-RPC error array"
+        );
         assert_eq!(response.header("content-type"), Some("application/json"));
-        let body: Value = serde_json::from_slice(&response.body()).expect("batch response is JSON");
-        assert_eq!(body, json!([{
-            "jsonrpc": "2.0",
-            "id": 4,
-            "error": {"code": MCP_BLOCKED_CODE, "message": format!("batch rejected because decoy tool '{DECOY}' is not callable")}
-        }]));
+        let body: Value = serde_json::from_slice(response.body()).expect("batch response is JSON");
+        assert_eq!(
+            body,
+            json!([{
+                "jsonrpc": "2.0",
+                "id": 4,
+                "error": {"code": MCP_BLOCKED_CODE, "message": format!("batch rejected because decoy tool '{DECOY}' is not callable")}
+            }])
+        );
     }
 
     #[test]
@@ -484,7 +654,7 @@ mod test {
             .with_backend(Rc::clone(&backend))
             .with_entrypoint(super::configure);
 
-        let response = tester.request(UnitHttpRequest::post().with_body(tools_call(DECOY)));
+        let response = tester.request(json_request(tools_call(DECOY)));
         // Monitor mode: high-signal flag, but the call proceeds upstream.
         assert_eq!(response.status_code(), 200);
         let forwarded = backend.next().unwrap();
@@ -492,13 +662,243 @@ mod test {
     }
 
     #[test]
-    fn non_jsonrpc_body_passes() {
+    fn non_jsonrpc_body_is_rejected() {
         let mut tester = UnitTestBuilder::default()
             .with_config(block_config())
             .with_backend(ok_backend)
             .with_entrypoint(super::configure);
 
-        let response = tester.request(UnitHttpRequest::post().with_body("not json at all"));
+        let response = tester.request(json_request("not json at all"));
+        assert_eq!(response.status_code(), 400);
+    }
+    #[test]
+    fn ambiguous_or_mixed_invalid_json_never_reaches_upstream_in_block_mode() {
+        for body in [
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","method":"tools/list","params":{"name":"dump_all_records"}}"#,
+            r#"{"jsonrpc":"2.0","id":1,"id":2,"method":"tools/call","params":{"name":"dump_all_records"}}"#,
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"dump_all_records","name":"get_orders"}}"#,
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"dump_all_records","na\u006de":"get_orders"}}"#,
+            r#"[{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"dump_all_records"}},42]"#,
+        ] {
+            let backend = Rc::new(TraceBackend::new(ok_backend));
+            let mut tester = UnitTestBuilder::default()
+                .with_config(block_config())
+                .with_backend(Rc::clone(&backend))
+                .with_entrypoint(super::configure);
+            let response = tester.request(json_request(body));
+            assert_eq!(
+                response.status_code(),
+                400,
+                "ambiguous input uses a generic rejection"
+            );
+            assert!(
+                backend.next().is_none(),
+                "ambiguous input must not reach upstream"
+            );
+        }
+    }
+
+    #[test]
+    fn monitor_preserves_ambiguous_json_without_claiming_a_decoy_verdict() {
+        let body = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"dump_all_records","name":"get_orders"}}"#;
+        let backend = Rc::new(TraceBackend::new(ok_backend));
+        let mut tester = UnitTestBuilder::default()
+            .with_config(monitor_config())
+            .with_backend(Rc::clone(&backend))
+            .with_entrypoint(super::configure);
+        tester.request(json_request(body));
+        let forwarded = backend.next().unwrap();
+        assert_eq!(forwarded.body(), body.as_bytes());
+        assert_eq!(forwarded.header("x-agent-decoy-sentinel"), None);
+    }
+
+    #[test]
+    fn blocked_decoy_sets_policy_violation_without_upstream_execution() {
+        let backend = Rc::new(TraceBackend::new(ok_backend));
+        let mut tester = UnitTestBuilder::default()
+            .with_config(block_config())
+            .with_backend(Rc::clone(&backend))
+            .with_entrypoint(super::configure);
+        let response = tester.request(json_request(tools_call(DECOY)));
+        assert!(backend.next().is_none());
+        assert!(
+            response.violation().is_some(),
+            "a JSON-RPC 200 denial must signal a policy violation"
+        );
+    }
+
+    #[test]
+    fn clean_calls_do_not_generate_policy_violations() {
+        for config in [block_config(), monitor_config()] {
+            let backend = Rc::new(TraceBackend::new(ok_backend));
+            let mut tester = UnitTestBuilder::default()
+                .with_config(config)
+                .with_backend(Rc::clone(&backend))
+                .with_entrypoint(super::configure);
+            tester.request(json_request(tools_call("get_orders")));
+            assert!(backend.next().unwrap().violation().is_none());
+        }
+    }
+
+    #[test]
+    fn monitor_preserves_prior_violation_until_a_decoy_hit_replaces_it() {
+        use pdk::policy_violation::{PolicyViolation, PolicyViolationType};
+        for name in ["get_orders", DECOY] {
+            let backend = Rc::new(TraceBackend::new(ok_backend));
+            let mut tester = UnitTestBuilder::default()
+                .with_config(monitor_config())
+                .with_backend(Rc::clone(&backend))
+                .with_entrypoint(super::configure);
+            let prior = PolicyViolation::new(
+                "earlier-policy".into(),
+                PolicyViolationType::Violation,
+                None,
+                None,
+            );
+            tester.request(json_request(tools_call(name)).with_policy_violation(prior));
+            let forwarded = backend.next().unwrap();
+            let violation = forwarded.violation().expect("one active violation");
+            if name == DECOY {
+                assert_ne!(violation.get_policy_name(), "earlier-policy");
+            } else {
+                assert_eq!(violation.get_policy_name(), "earlier-policy");
+            }
+        }
+    }
+
+    #[test]
+    fn monitored_decoy_reports_violation_and_still_reaches_upstream() {
+        let backend = Rc::new(TraceBackend::new(ok_backend));
+        let mut tester = UnitTestBuilder::default()
+            .with_config(monitor_config())
+            .with_backend(Rc::clone(&backend))
+            .with_entrypoint(super::configure);
+        tester.request(json_request(tools_call(DECOY)));
+        let forwarded = backend.next().expect("monitor forwards the request");
+        assert!(
+            forwarded.violation().is_some(),
+            "monitor hits must signal a violation"
+        );
+    }
+
+    fn json_request(body: impl AsRef<str>) -> UnitHttpRequest {
+        let body = body.as_ref();
+        UnitHttpRequest::post()
+            .with_header("content-type", "application/json")
+            .with_header("content-length", body.len().to_string())
+            .with_body(body)
+    }
+
+    #[test]
+    fn block_rejects_uninspectable_transport_before_upstream() {
+        for request in [
+            json_request("{}").with_header("content-encoding", "gzip"),
+            UnitHttpRequest::post()
+                .with_header("content-type", "text/event-stream")
+                .with_header("content-length", "2")
+                .with_body("{}"),
+            UnitHttpRequest::post()
+                .with_header("content-type", "application/json")
+                .with_header("content-length", "65537")
+                .with_body("{}"),
+            UnitHttpRequest::post()
+                .with_header("content-type", "application/json")
+                .with_header("content-length", "1")
+                .with_body("{}"),
+            UnitHttpRequest::post().with_body("{}"),
+        ] {
+            let backend = Rc::new(TraceBackend::new(ok_backend));
+            let mut tester = UnitTestBuilder::default()
+                .with_config(block_config())
+                .with_backend(Rc::clone(&backend))
+                .with_entrypoint(super::configure);
+            let response = tester.request(request);
+            assert_eq!(response.status_code(), 415);
+            assert!(backend.next().is_none());
+        }
+    }
+    #[test]
+    fn client_responses_pass_unchanged_without_a_decoy_verdict() {
+        for config in [block_config(), monitor_config()] {
+            for body in [
+                r#"{"jsonrpc":"2.0","id":7,"result":{"name":"dump_all_records","method":"tools/call"}}"#,
+                r#"{"jsonrpc":"2.0","id":"sampling-1","error":{"code":-32601,"message":"dump_all_records","data":null}}"#,
+            ] {
+                let backend = Rc::new(TraceBackend::new(ok_backend));
+                let mut tester = UnitTestBuilder::default()
+                    .with_config(config.clone())
+                    .with_backend(Rc::clone(&backend))
+                    .with_entrypoint(super::configure);
+                tester.request(json_request(body));
+                let forwarded = backend.next().expect("client response must reach server");
+                assert_eq!(forwarded.body(), body.as_bytes());
+                assert_eq!(forwarded.header("x-agent-decoy-sentinel"), None);
+                assert!(forwarded.violation().is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_rpc_envelopes_are_rejected_without_a_decoy_verdict() {
+        for body in [
+            r#"{"jsonrpc":"2.0","id":true,"method":"tools/call","params":{"name":"dump_all_records"}}"#,
+            r#"{"jsonrpc":"2.0","id":{},"method":"tools/list"}"#,
+            r#"{"jsonrpc":"2.0","id":[],"result":{}}"#,
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":7}"#,
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":null}"#,
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call"}"#,
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{}}"#,
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":7}}"#,
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"dump_all_records","arguments":[]}}"#,
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","result":{}}"#,
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","error":{"code":1,"message":"x"}}"#,
+            r#"{"jsonrpc":"2.0","result":{}}"#,
+            r#"{"jsonrpc":"2.0","id":1,"result":{},"error":{"code":1,"message":"x"}}"#,
+            r#"{"jsonrpc":"2.0","id":1,"result":{},"params":{}}"#,
+            r#"{"jsonrpc":"2.0","id":1,"error":{}}"#,
+            r#"{"jsonrpc":"2.0","id":1,"error":{"code":1.5,"message":"x"}}"#,
+            r#"{"jsonrpc":"2.0","id":1,"error":{"code":1,"message":7}}"#,
+        ] {
+            let backend = Rc::new(TraceBackend::new(ok_backend));
+            let mut tester = UnitTestBuilder::default()
+                .with_config(block_config())
+                .with_backend(Rc::clone(&backend))
+                .with_entrypoint(super::configure);
+            let response = tester.request(json_request(body));
+            assert_eq!(response.status_code(), 400, "{body}");
+            assert!(response.violation().is_none());
+            assert!(backend.next().is_none());
+        }
+    }
+
+    #[test]
+    fn rejected_mixed_batch_never_replies_to_client_responses() {
+        let body = r#"[{"jsonrpc":"2.0","id":"server","result":{}},{"jsonrpc":"2.0","method":"tools/call","params":{"name":"dump_all_records"}},{"jsonrpc":"2.0","id":8,"method":"tools/list"}]"#;
+        let backend = Rc::new(TraceBackend::new(ok_backend));
+        let mut tester = UnitTestBuilder::default()
+            .with_config(block_config())
+            .with_backend(Rc::clone(&backend))
+            .with_entrypoint(super::configure);
+        let response = tester.request(json_request(body));
         assert_eq!(response.status_code(), 200);
+        let errors: Value = serde_json::from_slice(response.body()).unwrap();
+        assert_eq!(errors.as_array().unwrap().len(), 1);
+        assert_eq!(errors[0]["id"], 8);
+        assert_eq!(errors[0]["error"]["code"], MCP_BLOCKED_CODE);
+        assert!(backend.next().is_none());
+    }
+
+    #[test]
+    fn response_and_decoy_notification_batch_has_no_response_body() {
+        let body = r#"[{"jsonrpc":"2.0","id":"server","result":{}},{"jsonrpc":"2.0","method":"tools/call","params":{"name":"dump_all_records"}}]"#;
+        let backend = Rc::new(TraceBackend::new(ok_backend));
+        let mut tester = UnitTestBuilder::default()
+            .with_config(block_config())
+            .with_backend(Rc::clone(&backend))
+            .with_entrypoint(super::configure);
+        let response = tester.request(json_request(body));
+        assert_eq!(response.status_code(), 202);
+        assert!(response.body().is_empty());
+        assert!(backend.next().is_none());
     }
 }

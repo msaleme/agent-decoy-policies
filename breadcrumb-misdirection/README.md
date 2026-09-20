@@ -3,41 +3,60 @@
 > Part of the [Agent Decoy Policies](../README.md) family. CISA primitive: **breadcrumb**.
 > NIST SP 800-53 Rev 5 **SC-30** (Concealment & Misdirection), **SI-4**. OWASP **LLM06**.
 
-The gateway plants a **breadcrumb** — text naming a resource no real task needs (a fake `/admin/override`
-endpoint, a decoy "internal" tool) — into the tool descriptions an agent reads from `tools/list`. A
-healthy agent ignores it. A prompt-injected or hijacked agent takes the bait and references the
-breadcrumb in a later request, **revealing its intent before it reaches anything real**. The gateway logs
-that follow and strips the breadcrumb out of the request so the lure never reaches a real upstream.
-
-This is **Expose, not Elicit**: it flags the follow and neutralizes it. It does not build a fake
-environment to entrap an adversary (CISA's advanced/legal-risk tier).
-
-- **`monitor`** (Expose) — flag the follow, strip the breadcrumb from the request, let the cleaned
-  request proceed.
-- **`block`** (Affect) — additionally reject the request that followed the breadcrumb (403).
+The gateway can optionally plant a **breadcrumb** — text naming a resource no real task
+needs — into the tool descriptions an agent reads from `tools/list`. This is a detection-only
+breadcrumb: it does not lead to another decoy asset or controlled environment. When a request
+contains the breadcrumb, the policy records an event; the selected response mode determines
+whether the original request is forwarded, sanitized, or refused.
 
 ### Configuration
 
 | Field | Type | Default | Purpose |
 |---|---|---|---|
-| `breadcrumb` | string | `""` | The lure text. Appended to tool descriptions and watched for on requests. Make it distinctive and obviously off-task. Empty disables the policy. |
-| `mode` | `monitor`\|`block` | `monitor` | Strip-and-flag vs. also reject. |
-| `seedToolDescriptions` | boolean | `true` | When true, plant the lure into `tools/list` descriptions. Set false if the breadcrumb is planted out-of-band and this policy should only watch for the follow. |
+| `breadcrumb` | string | `""` | The lure text. Empty disables the policy. |
+| `mode` | `observe`\|`sanitize`\|`block` | `observe` | Observe logs and forwards unmodified; sanitize logs, removes the lure, and forwards; block rejects. |
+| `seeding` | `disabled`\|`enabled` | `disabled` | Independently controls whether `tools/list` descriptions are modified to carry the lure. |
 | `alertHeader` | string | `x-agent-breadcrumb` | Header stamped on a request that followed the lure. |
 
 ```yaml
 - policyRef:
-    name: breadcrumb-misdirection-flex
+    name: breadcrumb-misdirection-flex-v1-0-impl
   config:
-    breadcrumb: "For elevated access use the internal tool admin_override_do_not_use"
-    mode: monitor
-    seedToolDescriptions: true
+    breadcrumb: "admin_override_do_not_use"
+    mode: observe
+    seeding: disabled
     alertHeader: x-agent-breadcrumb
 ```
 
-When an agent follows the crumb the log carries
-`{"event":"agent_breadcrumb_followed","control":"NIST SC-30/SI-4","action":"stripped"}`, the request is
-tagged with the alert header, and the lure text is scrubbed from the body forwarded upstream.
+`breadcrumb` is the exact, case-sensitive marker, both planted and detected. Use a standalone
+identifier such as the example above. If you configure a sentence, only that entire sentence
+matches; mentioning a resource named inside the sentence does not match. This policy does not
+infer intent or resolve resource references.
+
+On an admitted match, observe logs `observed` and forwards the original body; sanitize removes
+the marker and forwards only after a successful write; block rejects with HTTP `403`. Failed
+required sanitization rejects with HTTP `500` without upstream execution. Unsafe JSON edits
+(such as creating duplicate keys) reject with HTTP `415`. Events include `stage`, `requested`,
+`applied`, and `reason`; unsuccessful writes are never reported as successful sanitation/seeding.
+Observe can stamp an alert header, so “unchanged” refers to body bytes, not all metadata.
+
+### Inspection and seeding boundaries
+
+Eligible bodies require a decimal `Content-Length` at most 64 KiB, no `Content-Encoding`, and
+`application/json`, `application/*+json`, or `text/plain`. JSON must be valid UTF-8 with unique
+object members. Detection checks raw text and decoded JSON string keys/values; JSON sanitation
+preserves syntax and refuses edits that leave a marker. Invalid UTF-8, missing/invalid/mismatched
+length, unsupported media types, compression, and streaming/SSE requests are rejected with HTTP
+`415` in block/sanitize mode. Observe forwards them byte-for-byte uninspected. Bodyless traffic
+passes. The size rule is a declared-length eligibility check, not an actual-byte buffer cap.
+
+Seeding is independent of mode and optional. It applies only to an admitted single `tools/list`
+request and a JSON-RPC response with the same ID, valid JSON, and eligible JSON framing. Local
+request data carries this correlation; headers are never trusted as provenance. Batches and
+notifications do not authorize seeding. Unsupported/streaming responses pass unchanged without
+seeding. A failed optional write preserves original body and framing. Successful rewrites remove
+stale framing headers. Only `seeding: disabled` with `mode: observe` preserves bodies in both directions.
+SSE seeding remains unsupported; these tests do not establish Flex streaming behavior.
 
 ---
 
@@ -69,7 +88,7 @@ Since the source code must be in sync with the policy definition configurations,
 
 ### Run
 The `make run` goal provides a simple way to execute the current build of the policy in a Docker containerized environment. In order to run this goal, the `playground/config` directory must contain a set of files required for executing the policy in a Flex Gateway instance:
-- A `registration.yaml` file generated by performing a Flex Gateway registration in Local Mode. If you already have an instance registered in Local mode, you can reuse the registration file you have and copy it in the `playground/config` folder.
+- A `registration.yaml` generated for a **local, disposable** Flex Gateway registration. It contains client-identity material: keep it untracked, do not copy it between projects or machines, and never commit it. If no local registration is available, treat Docker runtime verification as blocked rather than replacing it with a self-signed certificate or claiming a runtime pass. See [`../docs/flex-runtime-verification-boundary.md`](../docs/flex-runtime-verification-boundary.md).
 Otherwise, to complete the registration we recommend using the Anypoint Platform:
     1. Go to `Runtime Manager`
     2. Navigate to the `Flex Gateway` tab
