@@ -1,4 +1,5 @@
-// Copyright (c) 2026 msaleme. Licensed under the MIT License.
+// Copyright 2026 Salesforce, Inc. All rights reserved.
+// Modifications Copyright (c) 2026 msaleme. Licensed under the MIT License.
 
 // This module contains common Rust stuff shared between test files.
 

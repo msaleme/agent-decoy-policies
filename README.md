@@ -112,6 +112,8 @@ network isolation, sizing, and transport validation.
 | Accepted fixes and current evidence | [Verification status](docs/REMAINING-ISSUES-PLAN.md) |
 | Flex runtime testing | [Runtime runbook](docs/FLEX-RUNTIME-RUNBOOK.md) |
 | Upload deadline and memory controls | [Upload gate](deployment/upload-gate/README.md) · [Resource preflight](docs/GATEWAY-RESOURCE-PREFLIGHT.md) |
+| Attribution and license scope | [Attribution](ATTRIBUTION.md) |
+| Versions and community conventions | [Changelog](CHANGELOG.md) · [Release guidance](docs/RELEASING.md) · [P4A comparison](docs/P4A-REPOSITORY-REVIEW.md) |
 | Automated verification | [CI workflow](.github/workflows/verify.yml) · [Verification scripts](scripts/) |
 
 ## Contributing
@@ -132,6 +134,10 @@ background includes [NIST SP 800-53 Rev. 5](https://doi.org/10.6028/NIST.SP.800-
 compliance certification. See also the
 [MuleSoft PDK overview](https://docs.mulesoft.com/pdk/latest/policies-pdk-overview).
 
+Design-source credit, PDK/template provenance, and dependency declarations are
+recorded in [ATTRIBUTION.md](ATTRIBUTION.md).
+
 ## License
 
-[MIT](LICENSE).
+Project contributions: [MIT](LICENSE). Upstream templates and dependencies retain
+their own notices and terms; see [attribution and license scope](ATTRIBUTION.md).
