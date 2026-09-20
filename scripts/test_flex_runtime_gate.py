@@ -6,6 +6,9 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+import contextlib
+import io
 
 import yaml
 
@@ -46,6 +49,15 @@ class BundleTests(unittest.TestCase):
             "spec": {"extends": [{"name": "sample-v1-0", "namespace": "default"}],
                      "properties": {"implementation": {"type": "string", "default": "base64://" + base64.b64encode(binary).decode()}}}}))
 
+    def test_assets_only_does_not_require_registration(self):
+        with patch.object(gate, "ROOT", self.root), patch.object(gate, "POLICIES", (self.policy,)), patch.object(gate, "verify_provenance", return_value=True), patch("sys.argv", ["gate", "--assets-only"]), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(gate.main(), 0)
+
+    def test_assets_only_still_rejects_invalid_assets(self):
+        self.wasm.write_bytes(b"invalid")
+        with patch.object(gate, "ROOT", self.root), patch.object(gate, "POLICIES", (self.policy,)), patch.object(gate, "verify_provenance", return_value=True), patch("sys.argv", ["gate", "--assets-only"]), contextlib.redirect_stdout(io.StringIO()):
+            self.assertNotEqual(gate.main(), 0)
+
     def test_matching_bundle_passes(self):
         self.assertEqual(gate.inspect_bundle(self.root, self.policy), [])
 
@@ -80,6 +92,11 @@ class BundleTests(unittest.TestCase):
         source.write_text("old source")
         record = {"sha256": gate.hashed_inputs(folder, self.release, "sample_policy")}
         (self.release / "runtime-bundle.json").write_text(json.dumps(record))
+        self.assertTrue(gate.verify_provenance(folder, self.release, "sample_policy"))
+        backend = folder / "tests/backend.py"
+        backend.write_text("new fixture")
+        self.assertFalse(gate.verify_provenance(folder, self.release, "sample_policy"))
+        backend.unlink()
         self.assertTrue(gate.verify_provenance(folder, self.release, "sample_policy"))
         source.write_text("new source")
         self.assertFalse(gate.verify_provenance(folder, self.release, "sample_policy"))

@@ -77,7 +77,9 @@ def inspect_bundle(root, policy):
 
 def hashed_inputs(folder, release, stem):
     files = [folder / "Cargo.toml", folder / "Cargo.lock", folder / "rust-toolchain.toml",
-             folder / "definition/gcl.yaml", folder / "tests/common/mod.rs", folder / "tests/requests.rs"]
+             folder / "definition/gcl.yaml"]
+    files.extend(sorted(path for path in (folder / "tests").rglob("*")
+                        if path.is_file() and (path.suffix in (".rs", ".py") or path.name == "Dockerfile")))
     files.extend(sorted((folder / "src").rglob("*.rs")))
     files.extend(release / f"{stem}{suffix}" for suffix in (".wasm", "_definition.yaml", "_implementation.yaml"))
     return {str(path.relative_to(folder)): hashlib.sha256(path.read_bytes()).hexdigest() for path in files}
@@ -115,6 +117,7 @@ def prepare(root, policy):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--prepare", action="store_true", help="Build offline and regenerate local test assets; never starts Docker")
+    parser.add_argument("--assets-only", action="store_true", help="Check build assets without requiring or inspecting a registration")
     args = parser.parse_args()
     blocked = False
     for policy in POLICIES:
@@ -129,6 +132,9 @@ def main():
         if not verify_provenance(folder, release, stem):
             errors.append("missing or stale build provenance; run --prepare")
         print(f"{policy}: assets " + ("PASS" if not errors else "FAIL: " + "; ".join(errors)))
+        if args.assets_only:
+            blocked |= bool(errors)
+            continue
         # Existence-only check: never read, parse, copy, or print identity material.
         present = (folder / "tests/config/registration.yaml").is_file()
         print("  registration: " + ("present; validity NOT checked" if present else "MISSING; runtime blocked"))

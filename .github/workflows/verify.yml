@@ -1,0 +1,48 @@
+# Copyright (c) 2026 msaleme. Licensed under the MIT License.
+name: Verify policies
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  policies:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install pinned build tools
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal --component rustfmt --component clippy --target wasm32-wasip1
+          python3 -m venv /tmp/policy-ci-python
+          /tmp/policy-ci-python/bin/pip install PyYAML==6.0.2
+          echo /tmp/policy-ci-python/bin >> "$GITHUB_PATH"
+          cargo +1.89.0 install cargo-anypoint --version 1.9.0 --locked
+      - name: Verify each policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          for policy in mcp-honeytoken-tripwire decoy-tool-sentinel breadcrumb-misdirection; do
+            (
+              cd "$policy"
+              cargo +1.89.0 fetch --locked
+              cargo +1.89.0 fmt --check
+              cargo +1.89.0 test --lib --locked --offline
+              cargo +1.89.0 clippy --all-targets --locked --offline -- -D warnings
+              cargo +1.89.0 test --tests --no-run --locked --offline
+            )
+          done
+      - name: Verify generated WASM bundles and build contracts
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+          python3 scripts/flex_runtime_gate.py --prepare --assets-only
+          git diff --exit-code
+      # Runtime suites require separately authorized disposable registrations.
+      # No registration or platform credentials are supplied to this workflow.

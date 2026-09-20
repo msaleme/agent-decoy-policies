@@ -102,3 +102,48 @@ frequently enough to avoid the idle timeout, exceed the configured response
 deadline without ending the stream, and assert that no upstream prefix reaches
 the client. Follow with unknown-length and inconsistent-framing cases, including
 connection reuse. Do not infer those outcomes from the delayed-response test.
+
+## Active-stream follow-up
+
+`gateway_bounds_active_and_unknown_length_streams` adds a controlled raw chunked
+backend, rebuilt from the checked-in Dockerfile and Python source before each
+run. Cache its pinned base first:
+
+```bash
+docker pull python:3.12.12-slim-bookworm@sha256:593bd06efe90efa80dc4eee3948be7c0fde4134606dd40d8dd8dbcade98e669c
+```
+
+Then prepare current assets and run the Honeytoken suite as above. The test
+uses the existing separately authorized disposable registration. Public CI
+compiles this test but never runs it or receives registration credentials.
+
+The active fixture emits its decoy immediately, then a chunk every 100 ms for
+up to ten seconds. Its decoded body stays below the 4096-byte buffer limit.
+The gateway must return 504 within five seconds (client deadline eight seconds),
+with no decoy in the body. This tests the response deadline while data remains
+active, rather than waiting for initial headers or relying on buffer overflow.
+Other cases cover finite unknown-length SSE withholding (200 and the withholding
+alert), oversized chunked output, malformed chunk framing, and clean exchanges
+before and after these cases through the same client. The client may reconnect;
+this does not prove that it reused a particular TCP connection.
+
+This remains bounded runtime evidence, not proof about infinite streams or total
+process memory. Conflicting Content-Length/Transfer-Encoding, slow downstream
+uploads, guaranteed connection reuse and double-write termination remain open.
+
+## Continuous checks and release migration
+
+`.github/workflows/verify.yml` builds on pushes to main and pull requests. It runs
+all library tests, formatting, strict Clippy, integration compilation, release
+WASM generation and bundle/Makefile contract checks. The assets-only gate neither
+requires nor reads registration files, and does not claim runtime verification.
+
+See [Breadcrumb migration](BREADCRUMB-MIGRATION.md) before deploying the changed
+schema. The next incompatible Breadcrumb release is reserved as 2.0.0; publishing
+and changing package/asset versions remain a coordinated release task.
+
+Final strengthened Honeytoken runtime result: **4 passed, 0 failed, 48.09 seconds**.
+All 81 library tests and 11 Python gate/build-contract tests pass, as do strict
+Clippy and release bundle validation. Composition implementation is tracked in
+[#23](https://github.com/msaleme/agent-decoy-policies/issues/23); it is not supplied
+by this CI/test/documentation change.
