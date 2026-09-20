@@ -431,3 +431,112 @@ async fn gateway_resource_limits_bound_buffering_and_stalled_upstreams() -> anyh
     stalled.assert_hits_async(1).await;
     Ok(())
 }
+
+// Rebuild the fixture from current sources; the pinned base must be cached locally.
+#[pdk_test]
+async fn gateway_bounds_active_and_unknown_length_streams() -> anyhow::Result<()> {
+    let build = std::process::Command::new("docker")
+        .args([
+            "build",
+            "--pull=false",
+            "--network=none",
+            "-t",
+            "agent-decoy-streaming:review",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/streaming-backend"),
+        ])
+        .output()?;
+    assert!(
+        build.status.success(),
+        "streaming fixture build failed; cache the pinned Python base first"
+    );
+    let httpmock_config = HttpMockConfig::builder()
+        .port(80)
+        .image_name("agent-decoy-streaming")
+        .version("review")
+        .hostname("backend")
+        .build();
+    let policy_config = PolicyConfig::builder()
+        .name(POLICY_NAME)
+        .configuration(serde_json::json!({
+            "honeytokens": [HONEYTOKEN],
+            "decoyIds": ["integration-honeytoken"],
+            "mode": "block",
+            "alertHeader": "x-agent-decoy-tripwire",
+            "caseSensitive": false
+        }))
+        .build();
+    let api_config = ApiConfig::builder()
+        .name("myApi")
+        .upstream(&httpmock_config)
+        .path("/anything/echo/")
+        .port(FLEX_PORT)
+        .policies([policy_config])
+        .build();
+    let flex_config = FlexConfig::builder()
+        .version("1.14.0")
+        .hostname("local-flex")
+        .env([
+            ("FLEX_DOWNSTREAM_CONNECTION_BUFFER_LIMIT_BYTES", "4096"),
+            ("FLEX_UPSTREAM_RESPONSE_TIMEOUT_SECONDS", "1"),
+        ])
+        .with_api(api_config)
+        .config_mounts([
+            (POLICY_DIR, "custom-policies"),
+            (COMMON_CONFIG_DIR, "common"),
+        ])
+        .build();
+    let composite = TestComposite::builder()
+        .with_service(flex_config)
+        .with_service(httpmock_config)
+        .build()
+        .await?;
+
+    let flex: Flex = composite.service()?;
+    let flex_url = flex.external_url(FLEX_PORT).unwrap();
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()?;
+    for command in [
+        "clean",
+        "finite",
+        "oversized",
+        "active",
+        "malformed",
+        "clean",
+    ] {
+        let start = std::time::Instant::now();
+        let response = client
+            .post(&flex_url)
+            .header("content-type", "text/plain")
+            .body(command)
+            .send()
+            .await?;
+        let status = response.status();
+        if command == "finite" {
+            assert_eq!(status, 200);
+            assert_eq!(
+                response.headers().get("x-agent-decoy-tripwire").unwrap(),
+                "withheld;reason=uninspectable-body"
+            );
+        }
+        let body = response.bytes().await?;
+        assert!(!body
+            .windows(HONEYTOKEN.len())
+            .any(|part| part == HONEYTOKEN.as_bytes()));
+        match command {
+            "clean" => {
+                assert_eq!(status, 200);
+                assert_eq!(body.as_ref(), b"clean");
+            }
+            "active" => {
+                assert_eq!(status, 504);
+                assert!(start.elapsed() < std::time::Duration::from_secs(5));
+            }
+            "oversized" | "malformed" => assert!(status.is_server_error()),
+            "finite" => assert!(body.is_empty()),
+            _ => unreachable!(),
+        }
+    }
+    Ok(())
+}

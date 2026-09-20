@@ -128,3 +128,9 @@ The `make release` goal also publishes the policy to Anypoint Exchange, but as a
 ### Policy Examples
 
 The PDK provides provides a set of example policy projects to get started creating policies and using the PDK features. To learn more about these examples see [Custom policy Examples](https://docs.mulesoft.com/pdk/latest/policies-pdk-policy-templates).
+
+## Migrating existing configurations
+
+See [Breadcrumb migration](../docs/BREADCRUMB-MIGRATION.md) for the explicit
+`monitor` → `sanitize` and `seedToolDescriptions` → `seeding` mapping, changed
+defaults, rollback checks, and the next major release boundary.
