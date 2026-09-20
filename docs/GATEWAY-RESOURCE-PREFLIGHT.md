@@ -56,12 +56,20 @@ The Honeytoken raw-socket suite also sends the five bytes of a clean body at
 upload is accepted. This explicitly tests that continuing activity can extend an
 upload beyond the idle interval. It does not establish an absolute upload deadline.
 
+## Outer gate now available
+
+The [optional upload gate](../deployment/upload-gate/README.md) adds a tested
+body collection deadline and complete-body admission. Its separate Docker suite
+also exercises concurrent uploads, a kernel OOM kill, and explicit restart under
+a 128 MiB cap. The optional Local Mode suite additionally verifies the complete
+edge/Flex/synthetic-backend chain, sixteen concurrent 64 KiB exchanges, and Flex
+OOM/explicit restart under a verified 1 GiB cgroup cap.
+
 ## Still required for #13
 
-- A supported outer/runtime absolute request-body deadline, tested with continuing
-  byte arrivals and zero rejected-request admissions to the upstream.
-- Deployment-specific concurrent-load, OOM/restart, and recovery evidence under
-  the selected aggregate memory cap. The checker verifies configuration only.
+- Apply and validate ingress isolation and workload-specific sizing in the target
+  deployment. Local full-chain load/OOM/restart evidence is now available; it is
+  not a production availability guarantee.
 - Supported downstream termination after both response-body replacement attempts
   fail; see the [PDK gap](../mcp-honeytoken-tripwire/docs/pdk-response-termination-gap.md).
 

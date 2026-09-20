@@ -1,0 +1,19 @@
+# Copyright (c) 2026 msaleme. Licensed under the MIT License.
+# Only for verify_upload_gate.py --flex on its uniquely named test network.
+apiVersion: gateway.mulesoft.com/v1alpha1
+kind: ApiInstance
+metadata:
+  name: upload-gate-verification
+spec:
+  address: http://0.0.0.0:8081
+  services:
+    test-backend:
+      address: http://backend:8081
+  policies:
+    - policyRef:
+        name: mcp-honeytoken-tripwire-v1-0-impl
+      config:
+        honeytokens: [outer-gate-decoy]
+        mode: block
+        alertHeader: x-agent-decoy-tripwire
+        caseSensitive: false

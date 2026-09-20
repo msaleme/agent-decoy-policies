@@ -1,0 +1,28 @@
+# Copyright (c) 2026 msaleme. Licensed under the MIT License.
+# Combine AFTER the playground compose file and docker-resource-limits.yaml.
+services:
+  local-flex:
+    # The edge must be the only host entrypoint; do not leave a bypass listener.
+    ports: !reset []
+    environment:
+      FLEX_DOWNSTREAM_CONNECTION_BUFFER_LIMIT_BYTES: "131072"
+      FLEX_STREAM_IDLE_TIMEOUT_SECONDS: "5"
+      FLEX_UPSTREAM_RESPONSE_TIMEOUT_SECONDS: "5"
+  upload-gate:
+    image: haproxy:3.2-alpine@sha256:5961c68bc8a81c5124d0a98ab20f81b74717d6afe596e805977d9cf84c126222
+    cgroup: private
+    mem_limit: 128m
+    memswap_limit: 128m
+    pids_limit: 64
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      EDGE_BIND: "0.0.0.0:8080"
+      FLEX_ADDRESS: "local-flex:8081"
+    volumes:
+      - type: bind
+        source: ${UPLOAD_GATE_CONFIG:?Set UPLOAD_GATE_CONFIG to the absolute haproxy.cfg path}
+        target: /usr/local/etc/haproxy/haproxy.cfg
+        read_only: true
+    depends_on:
+      - local-flex
