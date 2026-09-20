@@ -286,3 +286,148 @@ async fn block_checks_request_denial_response_redaction_and_transport_exclusions
 async fn monitor_preserves_response_bytes_including_excluded_transports() -> anyhow::Result<()> {
     exercise_mode("monitor").await
 }
+
+// The smaller gateway cap proves actual buffering enforcement independently of
+// this policy's 64 KiB declared-length admission rule.
+#[pdk_test]
+async fn gateway_resource_limits_bound_buffering_and_stalled_upstreams() -> anyhow::Result<()> {
+    let httpmock_config = HttpMockConfig::builder()
+        .port(80)
+        .version("latest")
+        .hostname("backend")
+        .build();
+    let policy_config = PolicyConfig::builder()
+        .name(POLICY_NAME)
+        .configuration(serde_json::json!({
+            "honeytokens": [HONEYTOKEN],
+            "decoyIds": ["integration-honeytoken"],
+            "mode": "block",
+            "alertHeader": "x-agent-decoy-tripwire",
+            "caseSensitive": false
+        }))
+        .build();
+    let api_config = ApiConfig::builder()
+        .name("myApi")
+        .upstream(&httpmock_config)
+        .path("/anything/echo/")
+        .port(FLEX_PORT)
+        .policies([policy_config])
+        .build();
+    let flex_config = FlexConfig::builder()
+        .version("1.14.0")
+        .hostname("local-flex")
+        .env([
+            ("FLEX_DOWNSTREAM_CONNECTION_BUFFER_LIMIT_BYTES", "4096"),
+            ("FLEX_UPSTREAM_RESPONSE_TIMEOUT_SECONDS", "1"),
+        ])
+        .with_api(api_config)
+        .config_mounts([
+            (POLICY_DIR, "custom-policies"),
+            (COMMON_CONFIG_DIR, "common"),
+        ])
+        .build();
+    let composite = TestComposite::builder()
+        .with_service(flex_config)
+        .with_service(httpmock_config)
+        .build()
+        .await?;
+
+    let flex: Flex = composite.service()?;
+    let flex_url = flex.external_url(FLEX_PORT).unwrap();
+    let httpmock: HttpMock = composite.service()?;
+    let mock_server = MockServer::connect_async(httpmock.socket()).await;
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()?;
+    let clean = mock_server
+        .mock_async(|when, then| {
+            when.body("clean-control");
+            then.status(200)
+                .header("content-type", "text/plain")
+                .body("clean-response");
+        })
+        .await;
+    let response = client
+        .post(&flex_url)
+        .header("content-type", "text/plain")
+        .body("clean-control")
+        .send()
+        .await?;
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.text().await?, "clean-response");
+    clean.assert_hits_async(1).await;
+    clean.delete_async().await;
+
+    let large = "x".repeat(8192);
+    let oversized_request = mock_server
+        .mock_async(|when, then| {
+            when.body(large.as_str());
+            then.status(200)
+                .header("content-type", "text/plain")
+                .body("unexpected-forwarding");
+        })
+        .await;
+    let response = client
+        .post(&flex_url)
+        .header("content-type", "text/plain")
+        .body(large)
+        .send()
+        .await?;
+    assert_eq!(
+        response.status(),
+        413,
+        "gateway cap must reject a body below the policy admission ceiling"
+    );
+    oversized_request.assert_hits_async(0).await;
+    oversized_request.delete_async().await;
+
+    for content_type in ["text/plain", "text/event-stream"] {
+        let payload = format!("{HONEYTOKEN}{}", "x".repeat(8192));
+        let fixture = mock_server
+            .mock_async(|when, then| {
+                when.body("large-response");
+                then.status(200)
+                    .header("content-type", content_type)
+                    .body(payload);
+            })
+            .await;
+        let response = client
+            .post(&flex_url)
+            .header("content-type", "text/plain")
+            .body("large-response")
+            .send()
+            .await?;
+        assert_eq!(
+            response.status(),
+            500,
+            "gateway cap must abort buffered response"
+        );
+        assert!(!response.text().await?.contains(HONEYTOKEN));
+        fixture.assert_hits_async(1).await;
+        fixture.delete_async().await;
+    }
+    let stalled = mock_server
+        .mock_async(|when, then| {
+            when.body("stalled-response");
+            then.status(200)
+                .header("content-type", "text/plain")
+                .delay(std::time::Duration::from_secs(3))
+                .body(HONEYTOKEN);
+        })
+        .await;
+    let response = client
+        .post(&flex_url)
+        .header("content-type", "text/plain")
+        .body("stalled-response")
+        .send()
+        .await?;
+    assert_eq!(
+        response.status(),
+        504,
+        "gateway timeout must win before the client timeout"
+    );
+    assert!(!response.text().await?.contains(HONEYTOKEN));
+    stalled.assert_hits_async(1).await;
+    Ok(())
+}

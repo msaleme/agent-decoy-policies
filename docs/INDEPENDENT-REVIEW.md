@@ -1,5 +1,7 @@
 # Independent remediation review
 
+Latest issue state and remaining verification: [post-merge follow-up](POST-MERGE-FOLLOW-UP.md).
+
 Review date: 2026-09-19. Worktree: `/tmp/agent-decoy-policies-honeytoken-streaming`.
 Base/HEAD: `03a5bf8b477e9bd7cf12f808013f17608349ae01`.
 
