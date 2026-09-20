@@ -58,6 +58,12 @@ GitHub releases, P4A submissions, and Anypoint Exchange publications are distinc
 operations. A successful source build or GitHub tag does not establish marketplace
 acceptance, platform publication, Monitoring export, or production validation.
 
+## Research citations and final-release planning
+
+The existing candidate is an immutable citation anchor. No final-release date is
+promised. See the [claim audit and proposed compatibility work](PREPRINT-CITATION-AND-FOLLOW-UPS.md)
+for mode vocabulary and the evidence needed before selecting a final snapshot.
+
 ## Community practice
 
 The [2026-09-20 comparison](P4A-REPOSITORY-REVIEW.md) found no tags or GitHub releases

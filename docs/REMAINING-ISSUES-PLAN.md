@@ -22,10 +22,10 @@ that fail headers admission are rejected before body inspection/upstream executi
 
 ## Verification on merged main
 
-[Successful main CI run](https://github.com/msaleme/agent-decoy-policies/actions/runs/35485920509):
+[Successful CI run for the cited source tag](https://github.com/msaleme/agent-decoy-policies/actions/runs/35515031903):
 
 - **100 library tests:** Honeytoken 42, Sentinel 25, Breadcrumb 14, Coordinator 19.
-- **22 Python tests**, all four formatting/strict all-target Clippy checks,
+- **23 Python tests**, all four formatting/strict all-target Clippy checks,
   integration-test compilation, and four release WASM/bundle checks.
 - Actual credential-free Docker upload-gate tests: active upload deadline,
   framing/buffer-saturation rejection, zero unexpected backend connections,
@@ -41,6 +41,11 @@ Run different PDK policy runtime suites serially on one Docker daemon because
 PDK cleanup selects shared labels.
 
 ## Remaining limitations and optional follow-up
+
+The [preprint claim audit and follow-up plan](PREPRINT-CITATION-AND-FOLLOW-UPS.md)
+records mode vocabulary, matching scope, configuration overlap and protocol/batch
+proposals. These are pending design work, not implemented capabilities or reopened
+findings from the accepted review.
 
 1. **Monitoring export verified in the authorized Sandbox:** five clean requests
    produced zero violations and three decoy requests produced three violations

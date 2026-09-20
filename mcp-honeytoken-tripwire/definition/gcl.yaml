@@ -55,11 +55,16 @@ spec:
         - monitor
         - block
       description: >-
-        "monitor" — flag only: emit the anomaly and stamp the alert header, but
-        let traffic pass (pure Expose; safe to run everywhere).
-        "block" — Affect: reject a request that references a honeytoken (403)
-        and strip the token out of any response body so the decoy cannot
-        exfiltrate.
+        "monitor" — emit an anomaly using an opaque decoy ID and stamp the alert
+        header, while preserving body bytes. Eligible inspection buffers bodies
+        and can add latency and memory use. Every deployment, including monitor,
+        requires change-management review of traffic, resources, event access and
+        retention. Events do not include matched token values or raw message bodies.
+        "block" — reject matching requests and redact or withhold eligible responses,
+        subject to the documented response-write capability boundary. JSON-RPC
+        denials use HTTP 200 with error -32008, or HTTP 202 without a body for
+        notification-only input; generic matching requests use HTTP 403.
+        Enforcing modes require additional review of availability and data changes.
     alertHeader:
       type: string
       default: x-agent-decoy-tripwire
