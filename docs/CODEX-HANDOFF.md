@@ -1,60 +1,51 @@
-# Codex handoff — current remediation state
+# Codex handoff — accepted remediation
 
-Latest issue state and remaining verification: [post-merge follow-up](POST-MERGE-FOLLOW-UP.md).
+Read [current acceptance and verification status](REMAINING-ISSUES-PLAN.md) first.
+As of 2026-09-20, the original reviewer has closed #6 and #13; no GitHub issues
+remain open. Older instructions to keep those issues open are superseded by those
+acceptance decisions. They do not prove Monitoring export or host-failure containment.
 
-Work only in `/tmp/agent-decoy-policies-honeytoken-streaming`, branch
-`fix/honeytoken-streaming-contract`. Implementation base:
-`03a5bf8b477e9bd7cf12f808013f17608349ae01`. See Git history for the published revision.
+## Working state
 
-## Handling constraints
+The remediation and follow-ups through PR #27 are merged. Use current `origin/main`
+and a fresh topic branch for additional changes; do not resume the old
+`fix/honeytoken-streaming-contract` base at `03a5bf8`.
+The working checkout used for the review is
+`/tmp/agent-decoy-policies-honeytoken-streaming`.
+Preserve the pre-existing untracked `.hermes/` directory.
 
-The user subsequently authorized committing, pushing, and merging this remediation when
-repository checks permit. This supersedes the original no-commit/no-push/no-PR handoff.
-Keep #6 and #13 open. Deployment and Exchange publication remain outside scope.
-The user also authorized bounded Sandbox registration and Flex verification. Each policy now has a separate ignored local identity;
-never display identity contents or copy them between projects. Nonsecret lifecycle records
-are in each policy's ignored `target/disposable-registration-record.json`. Revoke and remove
-these disposable fixtures when follow-up runtime verification is finished.
-Never trust headers as local provenance or cross-policy control state.
+## Authorization and handling
 
-## Read first
+The user authorized commits, pushes and merges after checks pass, and bounded
+Local Mode Sandbox verification. Disposable identities from those runs have been
+remotely deleted and locally removed. Do not assume an old fixture remains valid.
+Never display identity contents or copy them between policy projects.
+Connected Mode deployment and Exchange publication require separate authorization;
+no such deployment is needed to satisfy the reviewer's accepted issue scope.
+Never use headers as trusted provenance or cross-policy control state.
 
-- [Current issue/evidence checklist](REMEDIATION-EVIDENCE.md)
-- [Composition boundary](../COMPOSITION.md)
-- [Flex runtime boundary](flex-runtime-verification-boundary.md)
-- [PDK response-termination gap](../mcp-honeytoken-tripwire/docs/pdk-response-termination-gap.md)
+## Verified implementation
 
-## Implemented
+The three standalone policies and opt-in coordinator include fail-closed JSON
+admission, protocol/status contracts, safe mutation ordering, residual-token
+rescanning, and Sentinel PDK violations in monitor/block modes. The coordinator
+provides bounded composition; it is not an arbitrary ordering of independent filters.
+The optional outer upload gate and memory profile have actual Docker and Local Mode
+full-chain evidence. See the current status document for exact counts and limits.
 
-Sentinel duplicate-member fail-closed admission, Breadcrumb write/framing failure behavior,
-mode/status documentation, registration guidance, Honeytoken residual-token rescanning and
-schema-default loading, strict transport/UTF-8 admission, and correlated optional Breadcrumb
-seeding are implemented. Sentinel now emits a PDK violation for monitor and block decoy hits;
-local tests cover its single-slot precedence. Playground configurations are populated.
+## Further work
 
-Library results: **Honeytoken 42/42, Sentinel 25/25, Breadcrumb 14/14**.
-Formatting, strict all-target Clippy, release WASM and all asset gates pass. The asset gate has
-8 passing regression tests. Real Flex 1.14.0 fixtures now cover all three policies; see the
-current evidence checklist for exact latest runtime counts and limitations.
+There are no outstanding accepted-review code findings. Optional deployment
+verification must preserve these boundaries:
 
-## Remaining work
+- PDK property/log evidence is not exported Anypoint Monitoring evidence.
+- Uninspectable block-mode responses still buffer to be withheld.
+- PDK body-write success is not a low-level host acknowledgement; the documented
+  response termination limitation is not a reproduced runtime disclosure.
+- Source tests, Local Mode wire tests, and production guarantees are distinct.
 
-The four [independent-review findings](INDEPENDENT-REVIEW.md) are fixed and independently
-re-reviewed: Honeytoken parser-limit containment, valid MCP client response admission,
-Sentinel envelope validation, and Makefile/fixture name alignment. A separate reviewer
-approved these fixes. New Honeytoken/Sentinel Flex runs each pass 2/2; unchanged Breadcrumb
-retains 3/3. The build-contract regression passes for all three projects.
-
-The live issue checklist supports scoped merge consideration, not production certification.
-Keep #6 open until
-Anypoint Monitoring/export is independently observed and #13 open until actual buffering and
-indefinite-response limits are enforced at the gateway. Nothing has been closed on GitHub.
-
-PDK response-stage double-write failure, pre-buffer actual-byte limits, live SSE transformation,
-and multi-policy coordination remain platform/implementation boundaries. Finite SSE exclusion
-fixtures do not prove live-stream containment. No production-readiness claim is justified.
-
-For further source defects, add and observe a focused failing regression, make the smallest fix,
-then run the affected full library suite, strict Clippy, WASM build and hygiene checks. Regenerate
-local assets after source/schema/fixture changes using `python3 scripts/flex_runtime_gate.py --prepare`.
-Do not relax block behavior or substitute header control state to bypass a platform limitation.
+For a newly demonstrated source defect, first run a focused failing regression,
+make the smallest fix, then run the affected library suite, strict Clippy, release
+WASM and hygiene checks. Regenerate assets after relevant source/schema changes:
+`python3 scripts/flex_runtime_gate.py --prepare --assets-only`.
+Do not relax block semantics to bypass a platform limitation.

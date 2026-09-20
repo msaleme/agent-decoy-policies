@@ -1,6 +1,8 @@
 # Independent remediation review
 
-Latest issue state and remaining verification: [post-merge follow-up](POST-MERGE-FOLLOW-UP.md).
+Historical review record. Issue states and action items below reflect that review date.
+For current acceptance, see [current status](REMAINING-ISSUES-PLAN.md): the reviewer
+subsequently closed #6 and #13 on 2026-09-20.
 
 Review date: 2026-09-19. Worktree: `/tmp/agent-decoy-policies-honeytoken-streaming`.
 Base/HEAD: `03a5bf8b477e9bd7cf12f808013f17608349ae01`.

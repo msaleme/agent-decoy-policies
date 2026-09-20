@@ -1310,7 +1310,7 @@ mod test {
     }
 
     #[test]
-    fn unknown_length_response_is_not_buffered_or_rewritten() {
+    fn unknown_length_response_is_withheld_in_block_mode() {
         let mut tester = UnitTestBuilder::default()
             .with_config(block_config())
             .with_backend(leaking_backend_unknown_length)
@@ -1370,7 +1370,7 @@ mod test {
     }
 
     #[test]
-    fn oversized_response_is_not_buffered_or_rewritten() {
+    fn oversized_response_is_withheld_in_block_mode() {
         let mut tester = UnitTestBuilder::default()
             .with_config(block_config())
             .with_backend(oversized_json_backend_containing_decoy)
