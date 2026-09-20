@@ -1,133 +1,137 @@
 # Agent Decoy Policies
 
-A family of **MuleSoft Flex/Omni Gateway custom policies** (PDK, Rust → WebAssembly) that bring
-**cyber-deception** to selected agent and MCP message bodies. Operators choose decoys that are
-meaningful in their own environment; this repository does not establish that a particular value has no
-legitimate use or that a match alone proves compromise. The gateway is a useful enforcement point, but
-deployment needs an operator-defined response and false-positive review path.
+[![Verify policies](https://github.com/msaleme/agent-decoy-policies/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/msaleme/agent-decoy-policies/actions/workflows/verify.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Inspired by the CISA decoys guidance and informed by **MITRE Engage's** Expose, Affect, and
-Elicit engagement-goal vocabulary. These policies detect and optionally neutralize traffic; they
-do not implement a controlled decoy environment. See [COMPOSITION.md](./COMPOSITION.md) before
-chaining policies: independent Flex extensions cannot themselves guarantee ordered, fail-closed
-multi-policy transformations.
+**Cyber-deception policies for AI agent and Model Context Protocol (MCP) traffic,
+built with Rust and WebAssembly for MuleSoft Flex/Omni Gateway.**
 
-## Why deception at the gateway
+Detect configured honeytokens, intercept calls to inert decoy tools, and observe or
+sanitize breadcrumb markers in eligible message bodies. Use the standalone policies
+individually, or the opt-in coordinator when detection and transformations must run
+in a defined order.
 
-Traditional detection asks "does this request look malicious?" — a noisy, model-dependent judgement.
-A well-chosen decoy can make unauthorized interaction a useful, high-signal investigation input. Its actual
-false-positive rate depends on the local decoy design, traffic, and operating response. The three primitives
-below map one-to-one to CISA's decoy taxonomy.
+This repository includes policy source, configuration schemas, automated checks,
+and bounded Local Mode runtime evidence. Deployment support is limited to the
+[documented contracts and verification scope](docs/REMAINING-ISSUES-PLAN.md).
 
-## Current validation and support boundary
+## Choose a policy
 
-The current remediation passes Rust unit tests, WebAssembly release builds, and bounded behavior tests
-on Flex 1.14.0 for the three standalone policies and the opt-in coordinator. Results and limits are tracked in
-[the remediation evidence](docs/REMEDIATION-EVIDENCE.md). These tests cover supported buffered bodies
-and explicit finite transport exclusions; they do not establish production effectiveness, general
-interoperability, or fail-closed guarantees after platform write failures. Monitoring export, absolute deadlines for continuously active uploads, and response-stage
-double-write termination remain open boundaries. A bounded single-policy coordinator now
-implements composition; see [the remaining-issues plan](docs/REMAINING-ISSUES-PLAN.md).
+| Policy | Purpose | Available behavior |
+| --- | --- | --- |
+| [Honeytoken Tripwire](mcp-honeytoken-tripwire/README.md) | Detect configured decoy values in eligible request and response bodies | Monitor; block matching requests; redact or withhold responses |
+| [Decoy Tool Sentinel](decoy-tool-sentinel/README.md) | Detect JSON-RPC `tools/call` requests for configured inert tools | Monitor or block; reject an entire batch on a decoy hit; emit PDK policy violations |
+| [Breadcrumb Misdirection](breadcrumb-misdirection/README.md) | Detect configured lure text and optionally seed matching `tools/list` responses | Observe, sanitize, or block requests; enable response seeding separately |
+| [Decoy Coordinator](decoy-coordinator/README.md) | Combine all three detectors in one extension for bounded, single-envelope JSON-RPC | Inspect the original body, resolve blocks before edits, and rescan transformed output |
 
-The current implementations process decoded bodies made available to the filter. They do not claim
-coverage for SSE or other streaming bodies, compressed or non-UTF-8 content, oversized bodies, URL paths,
-query strings, or request/response headers unless a policy's source and a passing behavior test explicitly
-say otherwise.
+Each policy README defines its configuration, admission rules, and protocol behavior.
+The coordinator has a stricter contract and separate configuration. Chaining the
+standalone filters does not provide the same ordering guarantees; read the
+[composition contract](COMPOSITION.md) before combining them.
 
-## The policies
+Operators supply decoy values and choose the response appropriate to their environment.
+Decoy tools must remain inert even when a policy is bypassed or runs in monitor mode.
+A match provides an investigation signal; its meaning depends on local traffic,
+decoy placement, and false-positive review.
 
-| Policy | CISA primitive | What it does | NIST controls |
-|---|---|---|---|
-| [`mcp-honeytoken-tripwire`](./mcp-honeytoken-tripwire) | Honeytoken | Detects configured values in decoded request/response bodies; bounded Flex tests cover denial, redaction, buffering and transport exclusions. | SC-26 (Decoys), SI-20 (Tainting), SI-4 |
-| [`decoy-tool-sentinel`](./decoy-tool-sentinel) | Decoy tool | Inspects JSON-RPC calls and batches; bounded Flex tests verify atomic blocking. Exported Monitoring metrics remain unverified. | SC-26 (Decoys), SC-30 (Concealment & Misdirection), SI-4 |
-| [`breadcrumb-misdirection`](./breadcrumb-misdirection) | Breadcrumb | Prototype for JSON tool-list/body transformations. Streaming/SSE and production response-rewrite semantics are outside the currently validated scope. | SC-30 (Concealment & Misdirection), SI-4 |
+## Quick start
 
-The opt-in [`decoy-coordinator`](./decoy-coordinator) combines these detectors in one
-extension for bounded single-envelope JSON-RPC, with terminal decisions before
-mutation and a final response scan. Its stricter contract is documented separately.
-
-The policies are self-contained Rust implementations with no intentional outbound network calls. Their
-configuration modes, logging, and headers are source-level features; operators should verify their
-gateway logging/SIEM and downstream-enforcement integration in their own environment. The presence of a
-decoy match is an alerting input, not an automatically proven security verdict.
-
-### NIST anchors
-
-- **SP 800-53 Rev 5** — `SC-26` Decoys, `SC-30` Concealment & Misdirection, `SI-20` Tainting,
-  `SI-4` System Monitoring.
-- **SP 800-160 Vol 2 Rev 1** — cyber-resiliency technique **Deception** (Obfuscation / Disinformation /
-  Misdirection / Tainting) and **Analytic Monitoring**.
-
-Both are cited in the CISA decoys document's Prerequisites. These policies also address
-**OWASP LLM Top 10 (2025)** LLM06 *Excessive Agency* (a hijacked agent reaching for data/tools it should
-never touch).
-
-## Build & test
-
-Each policy is an independent PDK project. Requirements: Rust **1.89.0** with the `wasm32-wasip1` target,
-and — only for regenerating asset files or publishing — `anypoint-cli-v4` with the PDK plugin plus
-`cargo-anypoint` (`make setup`).
+Each policy is an independent Rust project. Native tests and WebAssembly compilation
+use the committed generated configuration and require no Anypoint credentials.
 
 ```bash
+git clone https://github.com/msaleme/agent-decoy-policies.git
+cd agent-decoy-policies
+
+rustup toolchain install 1.89.0 --profile minimal \
+  --component rustfmt --component clippy --target wasm32-wasip1
+
 cd mcp-honeytoken-tripwire
-
-# Compile the policy to WebAssembly (uses the committed src/generated/config.rs):
-cargo build --target wasm32-wasip1 --release
-
-# Run the unit tests:
-cargo test --lib
-
-# Full asset-file regeneration + WASM build (requires your Anypoint org id, see below):
-make setup          # one-time: installs cargo-anypoint + llvm-cov
-make build
+cargo +1.89.0 test --lib --locked
+cargo +1.89.0 build --release --target wasm32-wasip1 --locked
 ```
 
-> **Set your Anypoint org id before `make build` or publishing.** Each `Cargo.toml` ships
-> `group_id = "REPLACE_WITH_YOUR_ANYPOINT_ORG_ID"` under `[package.metadata.anypoint]`. Replace it with
-> your own organization id. `cargo build`/`cargo test` do **not** need it (the generated config is
-> committed); only `make build-asset-files`, `make build`, and publishing to Exchange do.
+Use the same commands in any of the four policy directories. Dependencies require
+network access on first use; add `--offline` after they are cached.
 
-## Contributing to P4A ("Policies for Agents")
+For schema regeneration and Anypoint asset tooling, follow the selected policy's
+Makefile instructions. Replace `REPLACE_WITH_YOUR_ANYPOINT_ORG_ID` in its
+`Cargo.toml` before organization-specific asset generation or Exchange publication.
+A local build does not publish or deploy a policy.
 
-These are built for the community **[P4A](https://www.p4a.ai/)** marketplace of Omni Gateway agent
-policies (PDK 1.8+). Two paths:
-- **Bring Your Own Policy** — this GitHub-hosted PDK project is built/validated and listed.
-- **Community Ideas** — propose the decoy family as ideas and gather upvotes.
+## Validation and deployment
 
-The decoy/deception family fills a gap in the existing catalog (MCP poisoning/drift detection, A2A skill
-governance, delegation-depth limiting, semantic cache) — none of which plant decoys.
+The [CI workflow](.github/workflows/verify.yml) runs:
 
-## Layout
+- Rust library tests, formatting, strict Clippy, and integration-test compilation
+  for all four policies.
+- Python verification tests and release WebAssembly bundle checks.
+- Credential-free Docker tests for the optional upload gate, including active
+  upload deadlines, framing rejection, memory limits, and explicit restart recovery.
 
-```
-agent-decoy-policies/
-├── mcp-honeytoken-tripwire/     # honeytoken tripwire prototype
-├── decoy-tool-sentinel/         # decoy MCP tool sentinel prototype
-├── breadcrumb-misdirection/     # breadcrumb lure prototype
-└── decoy-coordinator/            # bounded coordinated composition
-```
+The [verification record](docs/REMAINING-ISSUES-PLAN.md) documents 100 passing Rust
+library tests, 22 Python tests, and separate bounded Flex 1.14.0 Local Mode runs.
+Public CI does not run authenticated Flex behavior suites or receive a gateway identity.
 
-Each project keeps the standard PDK structure: `definition/gcl.yaml` (config schema),
-`src/lib.rs` (filter logic), `src/generated/` (auto-generated from the schema — do not hand-edit),
-`tests/`, `playground/` (local Docker Flex Gateway), and `AGENTS.md` (PDK guidance).
+For runtime setup, use the [Flex runbook](docs/FLEX-RUNTIME-RUNBOOK.md) and
+[registration and evidence boundary](docs/flex-runtime-verification-boundary.md).
+Keep registrations and other identity material outside version control. Delete each
+disposable remote registration before removing its local fixture.
 
-## References
+The optional [HAProxy upload gate](deployment/upload-gate/README.md) enforces a
+two-second body collection deadline for bounded POST requests, with a separate
+header timeout. The [resource preflight](docs/GATEWAY-RESOURCE-PREFLIGHT.md) checks
+Docker and live cgroup memory limits. These deployment examples require environment-specific
+network isolation, sizing, and transport validation.
 
-The design of each policy is anchored to public guidance. Every control cited in the tables above is
-traceable to one of these documents:
+## Supported scope and known limits
 
-- **CISA**, *Using Cyber Decoys to Strengthen Detection and Response*, TLP:CLEAR, September 2026 — the
-  Expose / Affect / Elicit taxonomy and the honeytoken, decoy-tool, and breadcrumb primitives this family
-  implements.
-  <https://www.cisa.gov/sites/default/files/2026-09/using-cyber-decoys-to-strengthen-detection-and-response_508c.pdf>
-- **NIST SP 800-53 Rev. 5**, *Security and Privacy Controls for Information Systems and Organizations*,
-  Sept 2020 (updates through Dec 2020) — controls **SC-26** (Decoys), **SC-30** (Concealment &
-  Misdirection), **SI-4** (System Monitoring), **SI-20** (Tainting).
-  DOI: [10.6028/NIST.SP.800-53r5](https://doi.org/10.6028/NIST.SP.800-53r5)
-- **NIST SP 800-160 Vol. 2 Rev. 1**, *Developing Cyber-Resilient Systems: A Systems Security Engineering
-  Approach*, Dec 2021 — the cyber-resiliency techniques **Deception** (Obfuscation / Disinformation /
-  Misdirection / Tainting) and **Analytic Monitoring**.
-  DOI: [10.6028/NIST.SP.800-160v2r1](https://doi.org/10.6028/NIST.SP.800-160v2r1)
-- **OWASP Top 10 for LLM Applications (2025)**, **LLM06: Excessive Agency** — a hijacked agent reaching
-  for data or tools it should never touch, which these decoys are designed to surface.
-  <https://genai.owasp.org/llm-top-10/>
+- **Bounded bodies:** semantic inspection is limited to each policy's admitted media
+  types and decoded bodies, generally with a declared length of at most 64 KiB.
+  Admission checks alone do not impose a received-byte memory cap.
+- **Transport exclusions:** SSE, streaming, compressed, and non-UTF-8 bodies are
+  outside semantic inspection coverage. Rejection, withholding, or uninspected
+  forwarding depends on the policy and mode; consult its README.
+- **Response containment:** successful response transformations are tested, but the
+  PDK does not expose a low-level body-write acknowledgement or a supported
+  response-stage abort. Unconditional containment during host-write failure remains
+  a [documented platform limitation](mcp-honeytoken-tripwire/docs/pdk-response-termination-gap.md).
+  The upload gate enforces request admission and does not close this response gap.
+- **Monitoring:** Sentinel emits PDK policy violations in monitor and block modes.
+  Exported Anypoint Monitoring counts remain unverified.
+- **Operational coverage:** matches inspect selected message bodies, not URL paths,
+  query strings, or arbitrary headers. Alert headers are not trusted provenance.
+  Local tests do not establish general MCP interoperability or production effectiveness.
+
+## Documentation map
+
+| Area | Start here |
+| --- | --- |
+| Policy configuration | The four policy READMEs linked above |
+| Coordinated enforcement | [Composition contract](COMPOSITION.md) |
+| Accepted fixes and current evidence | [Verification status](docs/REMAINING-ISSUES-PLAN.md) |
+| Flex runtime testing | [Runtime runbook](docs/FLEX-RUNTIME-RUNBOOK.md) |
+| Upload deadline and memory controls | [Upload gate](deployment/upload-gate/README.md) · [Resource preflight](docs/GATEWAY-RESOURCE-PREFLIGHT.md) |
+| Automated verification | [CI workflow](.github/workflows/verify.yml) · [Verification scripts](scripts/) |
+
+## Contributing
+
+For a bug report, include the policy, mode, gateway/PDK versions, a synthetic
+reproduction, and expected versus observed behavior. Exclude credentials and real
+sensitive payloads. For a behavior change, add a focused regression and run the
+affected policy's tests, formatting, Clippy, and release build. Keep source,
+configuration schemas, generated assets, and documentation consistent.
+
+## Design references
+
+The project applies deception concepts to gateway policy enforcement. Relevant
+background includes [NIST SP 800-53 Rev. 5](https://doi.org/10.6028/NIST.SP.800-53r5)
+(SC-26, SC-30, SI-4, and SI-20) and
+[NIST SP 800-160 Vol. 2 Rev. 1](https://doi.org/10.6028/NIST.SP.800-160v2r1)
+(cyber-resiliency engineering). These references describe design context, not a
+compliance certification. See also the
+[MuleSoft PDK overview](https://docs.mulesoft.com/pdk/latest/policies-pdk-overview).
+
+## License
+
+[MIT](LICENSE).
