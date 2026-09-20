@@ -147,3 +147,17 @@ All 81 library tests and 11 Python gate/build-contract tests pass, as do strict
 Clippy and release bundle validation. Composition implementation is tracked in
 [#23](https://github.com/msaleme/agent-decoy-policies/issues/23); it is not supplied
 by this CI/test/documentation change.
+
+## Disposable registration cleanup
+
+After the final runtime suite, the three policy-local `registration.yaml` files
+were removed without reading or copying their contents. The ignored lifecycle
+records retain only gateway names and cleanup status. Future runtime runs require
+new, separately authorized disposable identities; asset-only CI remains usable.
+
+Remote revocation is **not verified**. The documented Sandbox standalone gateway
+inventory returned HTTP 200 with zero records, so no matching gateway ID was
+available for a safe deletion. A second documented inventory route did not return
+JSON. No unrelated gateway was deleted, and deleting local files is not evidence
+of platform certificate revocation. Resolve the three names in the private local
+lifecycle records with the platform administrator before claiming revocation.
