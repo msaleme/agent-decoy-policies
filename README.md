@@ -132,6 +132,30 @@ sensitive payloads. For a behavior change, add a focused regression and run the
 affected policy's tests, formatting, Clippy, and release build. Keep source,
 configuration schemas, generated assets, and documentation consistent.
 
+## Citation
+
+The design these policies implement is published as a preprint, *Deception Primitives
+at an MCP-Aware Enforcement Point: A Bounded Reference Design for Honeytoken,
+Decoy-Tool, and Breadcrumb Controls* (Zenodo, 2026, CC BY 4.0). It is not
+peer-reviewed.
+
+| To cite | Use |
+|---|---|
+| The paper, tracking its newest version | [`10.5281/zenodo.22859851`](https://doi.org/10.5281/zenodo.22859851) (concept DOI) |
+| A claim pinned to exact content | [`10.5281/zenodo.22860118`](https://doi.org/10.5281/zenodo.22860118) (v1.1, 2026-09-20; v1.0 is [`…22859852`](https://doi.org/10.5281/zenodo.22859852)) |
+| This source at a reproducible point | Tag `v0.1.0-rc.1`, commit `f442cba95082b2fcb60c26c0613e327d420635a2` |
+
+The concept DOI always resolves to the latest version, so a reference that should
+follow the paper forward uses it. A claim that depends on specific wording or a
+specific number needs the version DOI, because the concept DOI will move.
+
+Evidence collected against the source is tied to the anchor tag rather than to
+`main`. The anchor's scope, and the corrections applied to the paper's claim list
+against it, are recorded in
+[research citation, claim audit and proposed follow-ups](docs/PREPRINT-CITATION-AND-FOLLOW-UPS.md).
+Citing the paper does not establish production effectiveness, independent
+validation, or certification of this implementation.
+
 ## Design references
 
 The project applies deception concepts to gateway policy enforcement. Relevant

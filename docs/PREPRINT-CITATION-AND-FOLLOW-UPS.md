@@ -1,9 +1,20 @@
 # Research citation, claim audit and proposed follow-ups
 
 Checked on 2026-09-20 for the preprint *Deception Primitives at an MCP-Aware
-Enforcement Point*, reported by its author as v0.13 and not yet DOI-minted.
+Enforcement Point*, reported by its author as v0.13 at the time of this audit.
 This audit covers the author's supplied claim list, not the full manuscript.
-The repository does not yet have a paper DOI to cite.
+
+**Updated 2026-09-20: the paper is now deposited and has a DOI.** It was published
+to Zenodo on 2026-09-20 under CC BY 4.0, as v1.0 and then v1.1 the same day. Concept
+DOI [`10.5281/zenodo.22859851`](https://doi.org/10.5281/zenodo.22859851) resolves to
+the newest version; the version DOIs are
+[`10.5281/zenodo.22860118`](https://doi.org/10.5281/zenodo.22860118) (v1.1, current)
+and [`10.5281/zenodo.22859852`](https://doi.org/10.5281/zenodo.22859852) (v1.0).
+Cite a version DOI wherever a claim depends on exact wording, including the
+corrections recorded below, because the concept DOI moves with each new version;
+two versions appearing on the deposit date is the concrete reason. The corrections
+in this document were checked against the v0.13 claim list and have not been
+re-verified against the deposited text.
 
 ## Citation anchor and release decision
 
