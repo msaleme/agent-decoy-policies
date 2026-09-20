@@ -45,8 +45,11 @@ Do not copy a registration identity between policy projects or use a fake/self-s
   redaction with correct received framing, monitor preservation and finite transport exclusions;
   Sentinel block/monitor controls, atomic batch refusal and exact upstream counts; Breadcrumb
   observe/sanitize/block, correlated discovery seeding and optional seeding exclusions.
-- **Scope limits:** Sentinel's exported Anypoint Monitoring counts and containment under
-  low-level response-write failure remain unverified. Bounded resource, active-stream,
+- **Verified in a separately authorized Connected Mode Sandbox run:** Sentinel's
+  exported clean/monitor/block counts match controlled traffic. See the
+  [query results and reporting caveat](CONNECTED-MONITORING-EVIDENCE.md).
+- **Scope limits:** containment under low-level response-write failure remains
+  unverified. Bounded resource, active-stream,
   framing, upload-deadline and OOM/restart cases have since passed; these are not
   general live-SSE transformation support. See [current acceptance and evidence](REMAINING-ISSUES-PLAN.md).
 - Registration material stays ignored and local-only. Each authorized policy run used its

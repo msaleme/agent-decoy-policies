@@ -3,7 +3,8 @@
 Read [current acceptance and verification status](REMAINING-ISSUES-PLAN.md) first.
 As of 2026-09-20, the original reviewer has closed #6 and #13; no GitHub issues
 remain open. Older instructions to keep those issues open are superseded by those
-acceptance decisions. They do not prove Monitoring export or host-failure containment.
+acceptance decisions. A later [Connected Mode Sandbox run](CONNECTED-MONITORING-EVIDENCE.md)
+verified Sentinel Monitoring export. Host-failure containment remains unverified.
 
 ## Working state
 
@@ -20,8 +21,10 @@ The user authorized commits, pushes and merges after checks pass, and bounded
 Local Mode Sandbox verification. Disposable identities from those runs have been
 remotely deleted and locally removed. Do not assume an old fixture remains valid.
 Never display identity contents or copy them between policy projects.
-Connected Mode deployment and Exchange publication require separate authorization;
-no such deployment is needed to satisfy the reviewer's accepted issue scope.
+The user subsequently authorized a disposable Connected Mode Sandbox run and its
+necessary test-only Exchange publication. That run is complete and its resources
+are deleted; see the linked evidence. Future provisioning needs its own scope.
+No shared API or production deployment was changed.
 Never use headers as trusted provenance or cross-policy control state.
 
 ## Verified implementation

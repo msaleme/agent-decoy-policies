@@ -98,7 +98,9 @@ network isolation, sizing, and transport validation.
   a [documented platform limitation](mcp-honeytoken-tripwire/docs/pdk-response-termination-gap.md).
   The upload gate enforces request admission and does not close this response gap.
 - **Monitoring:** Sentinel emits PDK policy violations in monitor and block modes.
-  Exported Anypoint Monitoring counts remain unverified.
+  [Connected Mode Sandbox verification](docs/CONNECTED-MONITORING-EVIDENCE.md) observed
+  the expected exported counts in both modes. Monitoring labels monitor-mode
+  violations `BLOCKED` too; that label does not prove upstream rejection.
 - **Operational coverage:** matches inspect selected message bodies, not URL paths,
   query strings, or arbitrary headers. Alert headers are not trusted provenance.
   Local tests do not establish general MCP interoperability or production effectiveness.

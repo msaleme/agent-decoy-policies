@@ -1,0 +1,109 @@
+{
+  "observedAt": "2026-09-20T14:29:39.694Z",
+  "sourceCommit": "f442cba95082b2fcb60c26c0613e327d420635a2",
+  "flexVersion": "1.14.0",
+  "pdkVersion": "1.10.0",
+  "wasmSha256": "348ba2020ea9629f867f3d77169a9c67e83f8cc9d2f63e202e099a3208f5e433",
+  "dataset": "mulesoft.api.summary",
+  "results": [
+    {
+      "mode": "monitor",
+      "apiInstanceId": 21186121,
+      "policyId": 9287455,
+      "appliedPolicyCount": 1,
+      "implementationAssetId": "decoy-sentinel-review-20260920141348915-flex-dev",
+      "implementationVersion": "0.0.1-20260920141443",
+      "windows": [
+        {
+          "label": "before",
+          "startEpochMs": 1789913628931,
+          "endEpochMs": 1789914239999,
+          "rows": []
+        },
+        {
+          "label": "clean",
+          "startEpochMs": 1789914240000,
+          "endEpochMs": 1789914299999,
+          "rows": [
+            {
+              "http.status_code": "200",
+              "api.instance.id": "21186121",
+              "COUNT(requests)": 5,
+              "request.disposition": "PROCESSED",
+              "timestamp": 1789914240000
+            }
+          ]
+        },
+        {
+          "label": "decoy",
+          "startEpochMs": 1789914420000,
+          "endEpochMs": 1789914479999,
+          "rows": [
+            {
+              "http.status_code": "200",
+              "api.instance.id": "21186121",
+              "COUNT(requests)": 3,
+              "policy.id": "9287455",
+              "policy.violation.status": "Violation",
+              "request.disposition": "BLOCKED",
+              "timestamp": 1789914420000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "block",
+      "apiInstanceId": 21186122,
+      "policyId": 9287456,
+      "appliedPolicyCount": 1,
+      "implementationAssetId": "decoy-sentinel-review-20260920141348915-flex-dev",
+      "implementationVersion": "0.0.1-20260920141443",
+      "windows": [
+        {
+          "label": "before",
+          "startEpochMs": 1789913628931,
+          "endEpochMs": 1789914239999,
+          "rows": []
+        },
+        {
+          "label": "clean",
+          "startEpochMs": 1789914240000,
+          "endEpochMs": 1789914299999,
+          "rows": [
+            {
+              "http.status_code": "200",
+              "api.instance.id": "21186122",
+              "COUNT(requests)": 5,
+              "request.disposition": "PROCESSED",
+              "timestamp": 1789914240000
+            }
+          ]
+        },
+        {
+          "label": "decoy",
+          "startEpochMs": 1789914420000,
+          "endEpochMs": 1789914479999,
+          "rows": [
+            {
+              "http.status_code": "200",
+              "api.instance.id": "21186122",
+              "COUNT(requests)": 3,
+              "policy.id": "9287456",
+              "policy.violation.status": "Violation",
+              "request.disposition": "BLOCKED",
+              "timestamp": 1789914420000
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "apiInstances": "both GET 404 after deletion",
+    "exchangeAssets": "all three versions GET 404 after deletion",
+    "gateway": "DELETED, zero connected replicas",
+    "localIdentity": "removed after remote deletion verification",
+    "containersAndNetwork": "removed and absence verified"
+  }
+}

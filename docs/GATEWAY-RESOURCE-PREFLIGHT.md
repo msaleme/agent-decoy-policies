@@ -73,10 +73,10 @@ OOM/explicit restart under a verified 1 GiB cgroup cap.
 - Supported downstream termination after both response-body replacement attempts
   fail; see the [PDK gap](../mcp-honeytoken-tripwire/docs/pdk-response-termination-gap.md).
 
-#6 and #13 were subsequently closed by the original reviewer. Optional exported
-Monitoring verification still requires a designated Connected Mode target; local
-cgroup or wire tests cannot supply that evidence. See the
-[current acceptance status](REMAINING-ISSUES-PLAN.md).
+#6 and #13 were subsequently closed by the original reviewer. A subsequent authorized
+[Connected Mode Sandbox run](CONNECTED-MONITORING-EVIDENCE.md) verified Sentinel
+exported counts. Local cgroup or wire tests alone cannot supply that evidence.
+See the [current acceptance status](REMAINING-ISSUES-PLAN.md).
 
 ## Sources
 

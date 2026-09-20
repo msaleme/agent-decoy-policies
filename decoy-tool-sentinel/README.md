@@ -44,7 +44,11 @@ Sentinel emits the same control mapping in either mode, with action reflecting t
 - block: `{"event":"agent_decoy_tool_call","control":"NIST SC-26/SC-30/SI-4","tool":"dump_all_records","action":"blocked"}`
 - monitor: `{"event":"agent_decoy_tool_call","control":"NIST SC-26/SC-30/SI-4","tool":"dump_all_records","action":"flagged"}`
 
-Response-bearing decoy denials use HTTP `200` with JSON-RPC errors; notification-only denials use HTTP `202` without a body. Every detected decoy call, in monitor or block mode, calls PDK's `generate_policy_violation()` once per request; clean and uninspectable calls do not. Local tests observe this property; Flex analytics/export behavior remains unverified. PDK stores one active violation per request: this call replaces an earlier violation, and a later policy may replace this one. Policy ordering therefore determines the reported violation; the alert header is not trusted monitoring evidence.
+Response-bearing decoy denials use HTTP `200` with JSON-RPC errors; notification-only denials use HTTP `202` without a body. Every detected decoy call, in monitor or block mode, calls PDK's `generate_policy_violation()` once per request; clean and uninspectable calls do not. Local tests observe this property.
+
+[Connected Mode Sandbox evidence](../docs/CONNECTED-MONITORING-EVIDENCE.md) on Flex 1.14.0 also verifies exported counts: five clean calls produced zero violations and three decoy calls produced three violations in each mode. Monitoring reported `request.disposition=BLOCKED` for monitor hits too, despite all three reaching the backend; use wire/backend evidence to establish actual blocking.
+
+PDK stores one active violation per request: this call replaces an earlier violation, and a later policy may replace this one. Policy ordering therefore determines the reported violation; the alert header is not trusted monitoring evidence.
 
 A detected decoy causes atomic rejection of its entire batch. Only request IDs receive error replies; notifications and client responses never receive JSON-RPC replies. A rejected batch with no request IDs receives HTTP `202` with no body.
 

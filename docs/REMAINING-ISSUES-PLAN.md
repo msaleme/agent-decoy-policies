@@ -1,8 +1,8 @@
 # Current acceptance and verification status
 
 Checked on **2026-09-20** against `main` at
-`4bb7b45bf0774ba572b151fc3305992ca73791c1`. GitHub has **zero open issues and
-zero open pull requests** at this checkpoint. This document supersedes the
+`f442cba95082b2fcb60c26c0613e327d420635a2` (source tag `v0.1.0-rc.1`).
+GitHub has **zero open issues and zero open pull requests** at this checkpoint. This document supersedes the
 issue-state and next-step instructions in the older remediation logs.
 
 ## Reviewer acceptance
@@ -42,10 +42,12 @@ PDK cleanup selects shared labels.
 
 ## Remaining limitations and optional follow-up
 
-1. **Monitoring export:** Sentinel's PDK violation implementation is accepted;
-   exported Anypoint Monitoring counts have not been observed. A dedicated
-   Connected Mode target and any test-only publication remain separately authorized
-   deployment work. They are not a remaining condition for the reviewer's #6 closure.
+1. **Monitoring export verified in the authorized Sandbox:** five clean requests
+   produced zero violations and three decoy requests produced three violations
+   for each Sentinel mode on Flex 1.14.0. The exported `BLOCKED` disposition also
+   appeared for monitor hits that reached the backend. See [counts, query, artifact
+   identity and cleanup evidence](CONNECTED-MONITORING-EVIDENCE.md). This establishes
+   the isolated Sentinel case, not reporting precedence in arbitrary policy chains.
 2. **Response containment under host failure:** successful redaction/withholding
    cases are tested, but the PDK does not acknowledge low-level body writes through
    `set_body`'s result. No real Flex double-error disclosure has been reproduced.
@@ -68,6 +70,10 @@ had already been removed, exact names/IDs/environment were recovered from creati
 audit records and supported deletion by ID succeeded. Later identities were deleted
 using `flexctl registration delete --file` before local removal. Nonsecret lifecycle
 records remain outside tracked source; no registration material belongs in Git.
+The subsequent authorized Connected Mode run also deleted both API instances,
+all three test Exchange asset versions and the gateway registration. Its local
+identity was removed after remote deletion verification; test containers and
+network were removed. See the linked Connected Mode evidence.
 
 The audit found no tracked working-tree changes before this documentation correction.
 The pre-existing untracked `.hermes/` directory is preserved and excluded from commits.
