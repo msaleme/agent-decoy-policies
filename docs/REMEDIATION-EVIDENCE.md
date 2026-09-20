@@ -1,5 +1,7 @@
 # Local remediation evidence
 
+Latest issue state and remaining verification: [post-merge follow-up](POST-MERGE-FOLLOW-UP.md).
+
 Worktree: `/tmp/agent-decoy-policies-honeytoken-streaming`.
 Branch: `fix/honeytoken-streaming-contract`.
 Base/HEAD: `03a5bf8b477e9bd7cf12f808013f17608349ae01`.
