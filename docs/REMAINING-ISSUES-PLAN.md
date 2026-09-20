@@ -62,9 +62,15 @@ The two fresh registrations used for this round are deleted remotely using the
 supported `registration delete --file` operation before local file removal.
 Only nonsecret lifecycle records remain in ignored target directories.
 
-The **three older registrations** remain unverified. Their local files were removed
-before remote deletion in the previous round, and the records retained names but
-not gateway IDs. The Sandbox inventory returned no records. Recover their IDs
-from platform-side registration/audit records with the platform administrator,
-then perform supported deletion. Do not treat deletion of newer registrations as
-revocation of those older identities, and do not guess IDs or delete shared assets.
+The **three older registrations are also deleted remotely**. Their local files
+had been removed before remote deletion, leaving names without gateway IDs.
+A narrowly scoped, read-only Audit Log Query recovered the three successful
+Flex Gateway creation records. Each exact registration name, object ID, and
+Sandbox environment ID was checked before supported
+`flexctl registration delete --gateway-id` was run. All three operations
+returned success. No shared gateway was selected, and no identity file was
+recreated. Nonsecret deletion evidence remains outside the repository.
+
+All five disposable registrations used across these review rounds have now
+received successful remote deletion responses. Local fixture removal alone
+was not treated as evidence of remote deletion.
