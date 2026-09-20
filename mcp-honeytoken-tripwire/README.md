@@ -11,12 +11,19 @@ traffic and operating response, yields an event worth investigating; this policy
 that a match alone proves compromise.
 
 - **`monitor`** (Expose) — emit a structured anomaly to the gateway log and stamp the alert header;
-  eligible traffic continues unchanged.
+  eligible body bytes are preserved; alert headers may change.
 - **`block`** (Affect) — reject a **request** that references a honeytoken. For one complete JSON-RPC 2.0 request object, or a non-empty batch whose every member has `jsonrpc: "2.0"` and a string `method`, the policy returns an HTTP `200` JSON-RPC `-32008` error preserving request IDs; notification-only input returns HTTP `202` with no body. These batch paths are generic JSON-RPC and compatibility coverage for legacy MCP (≤2025-03-26), not current MCP behavior. A tripped response-eligible batch is atomically refused in `block` mode; there is no batch forwarding override. A detected token in parseable non-JSON-RPC or mixed-invalid traffic retains the generic HTTP `403` policy response. Explicit JSON that cannot be parsed within the supported limits instead receives HTTP `415`. For eligible response bodies, a honeytoken is stripped without expanding the body; rewrite/framing failures trigger an empty-body withholding attempt, subject to the response-containment platform boundary below.
 
 The [post-merge runtime follow-up](../docs/POST-MERGE-FOLLOW-UP.md) records a Flex 1.14.0
 experiment with explicit gateway buffer and timeout controls. It verifies bounded buffered
 exchanges; indefinite streams and response-write termination remain outside that evidence.
+
+Every deployment, including `monitor`, requires change-management review. Inspection
+buffers eligible bodies and can add latency and memory use; review event access,
+retention and false-positive handling as well as transport and resource limits.
+Honeytoken events contain opaque configured decoy IDs, not matched token values or
+raw message bodies. Keep those IDs nonsensitive. Blocking and response rewriting
+need additional review of availability and data changes.
 
 ### Inspection boundary
 

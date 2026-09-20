@@ -49,7 +49,9 @@ images and build tools are separate upstream products with their own terms.
 ## Design references
 
 - **CISA:** the original project cites *Using Cyber Decoys to Strengthen Detection
-  and Response* as inspiration for honeytokens, decoy tools, and breadcrumbs.
+  and Response* as cyber-decoy design inspiration. **Decoy tool** is this project's
+  MCP-specific term, not a primitive attributed to CISA. The Expose/Affect/Elicit
+  engagement-goal vocabulary is attributed to MITRE Engage below.
   [Original cited PDF](https://www.cisa.gov/sites/default/files/2026-09/using-cyber-decoys-to-strengthen-detection-and-response_508c.pdf).
   The attribution is retained from the project's initial documentation. CISA's
   server returned HTTP 403 during this review, so the document's contents and

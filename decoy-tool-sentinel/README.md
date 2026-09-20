@@ -1,6 +1,6 @@
 # Decoy Tool Sentinel
 
-> Part of the [Agent Decoy Policies](../README.md) family. CISA primitive: **decoy tool**.
+> Part of the [Agent Decoy Policies](../README.md) family. Project term: **decoy tool**; see [design provenance](../ATTRIBUTION.md#design-references).
 > NIST SP 800-53 Rev 5 **SC-26** (Decoys), **SC-30** (Concealment & Misdirection), **SI-4**. OWASP **LLM06**.
 
 You wire an **inert** tool into the fabric that has no legitimate use, then register its

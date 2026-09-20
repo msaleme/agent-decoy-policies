@@ -15,6 +15,11 @@ This repository includes policy source, configuration schemas, automated checks,
 and bounded Local Mode runtime evidence. Deployment support is limited to the
 [documented contracts and verification scope](docs/REMAINING-ISSUES-PLAN.md).
 
+The design draws on [MITRE Engage's engagement goals](https://engage.mitre.org/wp-content/uploads/2022/03/StarterKit-v1.0.pdf)
+and cites [CISA's 2026 cyber-decoy guidance](https://www.cisa.gov/resources-tools/resources/using-cyber-decoys-strengthen-detection-and-response)
+as inspiration; **“decoy tool” is this project's term**. See the
+[attribution record](ATTRIBUTION.md#design-references) for scope and source-verification limits.
+
 ## Choose a policy
 
 | Policy | Purpose | Available behavior |
@@ -70,7 +75,7 @@ The [CI workflow](.github/workflows/verify.yml) runs:
   upload deadlines, framing rejection, memory limits, and explicit restart recovery.
 
 The [verification record](docs/REMAINING-ISSUES-PLAN.md) documents 100 passing Rust
-library tests, 22 Python tests, and separate bounded Flex 1.14.0 Local Mode runs.
+library tests, 23 Python tests, and separate bounded Flex 1.14.0 Local Mode runs.
 Public CI does not run authenticated Flex behavior suites or receive a gateway identity.
 
 For runtime setup, use the [Flex runbook](docs/FLEX-RUNTIME-RUNBOOK.md) and
@@ -111,6 +116,7 @@ network isolation, sizing, and transport validation.
 | --- | --- |
 | Policy configuration | The four policy READMEs linked above |
 | Coordinated enforcement | [Composition contract](COMPOSITION.md) |
+| Research citation and planned compatibility work | [Citation guidance](docs/PREPRINT-CITATION-AND-FOLLOW-UPS.md) |
 | Accepted fixes and current evidence | [Verification status](docs/REMAINING-ISSUES-PLAN.md) |
 | Flex runtime testing | [Runtime runbook](docs/FLEX-RUNTIME-RUNBOOK.md) |
 | Upload deadline and memory controls | [Upload gate](deployment/upload-gate/README.md) · [Resource preflight](docs/GATEWAY-RESOURCE-PREFLIGHT.md) |

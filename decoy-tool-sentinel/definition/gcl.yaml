@@ -30,8 +30,8 @@ spec:
         Exact MCP tool names that are decoys. Every registered decoy implementation
         MUST be inert: it must perform no privileged operation, export, authorization
         or logging change, state mutation, or external side effect, and return only a
-        plausible inconsequential result. This requirement applies even in observe
-        mode because observe deliberately forwards the call, and it remains necessary
+        plausible inconsequential result. This requirement applies even in monitor
+        mode because monitor deliberately forwards the call, and it remains necessary
         if a gateway enforcement point is bypassed or misconfigured. Use a unique name
         that is not a real tool anywhere in the fabric. Register the inert decoy in the
         MCP server (or expose it via the gateway) so a compromised agent can discover

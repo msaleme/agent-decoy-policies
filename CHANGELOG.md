@@ -2,7 +2,14 @@
 
 ## Unreleased
 
-Changes after the first source snapshot will be recorded here.
+- Verified Sentinel's exported Monitoring counts in a disposable Connected Mode
+  Sandbox; see [evidence and cleanup](docs/CONNECTED-MONITORING-EVIDENCE.md).
+- Correct Honeytoken's monitor-mode safety and status descriptions; document
+  buffering, operational review and opaque-ID logging without raw body/token logging.
+- Restore concise design provenance, identify “decoy tool” as project terminology,
+  and correct the cited snapshot's Python test count to 23.
+- Record [citation boundaries and proposed compatibility work](docs/PREPRINT-CITATION-AND-FOLLOW-UPS.md).
+  Configuration mode names and runtime behavior are unchanged.
 
 ## [v0.1.0-rc.1](https://github.com/msaleme/agent-decoy-policies/releases/tag/v0.1.0-rc.1) — 2026-09-20
 
