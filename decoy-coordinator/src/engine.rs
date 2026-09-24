@@ -172,6 +172,13 @@ impl Engine {
     pub fn response_enforced(&self) -> bool {
         self.0.honeytoken_mode == "block" && !self.0.honeytokens.is_empty()
     }
+    pub fn breadcrumb_enforced(&self) -> bool {
+        self.0.breadcrumb_mode == "block" && !self.0.breadcrumb.is_empty()
+    }
+    // Case-sensitive, mirroring the breadcrumb matcher in `request`.
+    pub fn breadcrumb_hit(&self, body: &[u8]) -> bool {
+        !self.0.breadcrumb.is_empty() && String::from_utf8_lossy(body).contains(&self.0.breadcrumb)
+    }
     fn honey(&self, body: &[u8], value: &Value) -> bool {
         let raw = String::from_utf8_lossy(body);
         self.0.honeytokens.iter().any(|n| {

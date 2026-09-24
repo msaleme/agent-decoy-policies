@@ -41,6 +41,7 @@ fn deny(body: &[u8], engine: &Engine) -> Response {
             let body=json!({"jsonrpc":"2.0","id":id,"error":{"code":-32008,"message":"decoy policy rejected request"}}).to_string();
             if body.len() > LIMIT
                 || (engine.response_enforced() && engine.response_hit(body.as_bytes()))
+                || (engine.breadcrumb_enforced() && engine.breadcrumb_hit(body.as_bytes()))
             {
                 return Response::new(403);
             }
