@@ -111,6 +111,73 @@ fn request_sanitization_must_not_change_id_or_method() {
 }
 
 #[test]
+fn sanitization_preserves_object_keys_and_fails_closed_on_a_key_marker() {
+    let mut e = engine();
+    e.0.breadcrumb = "decoy_".into();
+    // A marker embedded in a key must not be deleted (that would rename the field
+    // and change semantics, e.g. decoy_role -> role); fail closed instead (#39).
+    assert!(e
+        .request(br#"{"jsonrpc":"2.0","method":"ping","params":{"decoy_role":"admin"}}"#)
+        .is_err());
+}
+#[test]
+fn sanitization_strips_inert_values_but_keeps_the_key() {
+    let mut e = engine();
+    e.0.breadcrumb = "lure".into();
+    let plan = e
+        .request(br#"{"jsonrpc":"2.0","method":"ping","params":{"role":"admin_lure"}}"#)
+        .unwrap();
+    let body = String::from_utf8_lossy(&plan.body);
+    assert!(!plan.blocked);
+    assert!(!body.contains("lure"));
+    assert!(body.contains("\"role\""));
+    assert!(body.contains("admin_"));
+}
+#[test]
+fn sanitization_cannot_synthesize_a_tools_call_argument() {
+    let mut e = engine();
+    e.0.breadcrumb = "lure".into();
+    // A marker inside tools/call arguments is load-bearing; fail closed rather than
+    // rewrite it into a different (possibly privileged) argument (#39).
+    assert!(e
+        .request(
+            br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"safe","arguments":{"note":"lure"}}}"#
+        )
+        .is_err());
+}
+#[test]
+fn configuration_bounds_are_enforced() {
+    let base = |ht: Vec<String>, breadcrumb: String| -> Engine {
+        Engine(
+            serde_json::from_value(json!({
+                "honeytokens": ht, "decoyTools": ["admin"], "breadcrumb": breadcrumb,
+                "honeytokenMode": "block", "sentinelMode": "block",
+                "breadcrumbMode": "observe", "seeding": "disabled", "caseSensitive": false
+            }))
+            .unwrap(),
+        )
+    };
+    assert!(base(vec!["secret".into()], "lure".into()).within_limits());
+    // Too many detectors.
+    let many: Vec<String> = (0..MAX_DETECTORS + 1).map(|i| format!("t{i}")).collect();
+    assert!(!base(many, "lure".into()).within_limits());
+    // Over-long breadcrumb.
+    assert!(!base(vec!["secret".into()], "x".repeat(MAX_BREADCRUMB_LEN + 1)).within_limits());
+    // Over-long individual detector.
+    assert!(!base(vec!["x".repeat(MAX_DETECTOR_LEN + 1)], "lure".into()).within_limits());
+}
+#[test]
+fn seeding_is_best_effort_and_skips_a_compact_response() {
+    let mut e = engine();
+    e.0.breadcrumb = "lure".into();
+    // A minified tools/list response has no spare whitespace, so a non-expanding
+    // seed cannot fit: seeding is best-effort and leaves the body unchanged (#41).
+    let body =
+        br#"{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"safe","description":"clean"}]}}"#;
+    assert_eq!(e.response(body, Some(&json!(1))), body);
+    assert!(e.seed_applicable(body, Some(&json!(1))));
+}
+#[test]
 fn response_monitor_reports_hit_without_mutation() {
     let mut e = engine();
     e.0.honeytoken_mode = "monitor".into();

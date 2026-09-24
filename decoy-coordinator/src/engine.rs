@@ -2,6 +2,14 @@
 use crate::{generated::config::Config, json::NoDuplicateMembers};
 use serde_json::{Map, Value};
 pub const LIMIT: usize = 64 * 1024;
+// Conservative configuration bounds. A bounded request body is worthless if a
+// hostile or mistaken configuration can still drive unbounded per-request scan
+// work, so detector count, individual detector length, breadcrumb length and the
+// aggregate detector byte budget are all capped and rejected at startup (#40).
+pub const MAX_DETECTORS: usize = 64;
+pub const MAX_DETECTOR_LEN: usize = 256;
+pub const MAX_BREADCRUMB_LEN: usize = 256;
+pub const MAX_CONFIG_BYTES: usize = 8 * 1024;
 pub struct Engine(pub Config);
 pub struct RequestPlan {
     pub blocked: bool,
@@ -76,11 +84,13 @@ fn envelope(value: &Value) -> bool {
     true
 }
 
+// When `fold` is set, `needle` MUST already be ASCII-lowercased by the caller.
+// Only the haystack is folded here; folding the needle once at the call site
+// avoids re-lowercasing it at every visited JSON node (#40).
 fn contains(value: &Value, needle: &str, fold: bool) -> bool {
     let matches = |s: &str| {
         if fold {
-            s.to_ascii_lowercase()
-                .contains(&needle.to_ascii_lowercase())
+            s.to_ascii_lowercase().contains(needle)
         } else {
             s.contains(needle)
         }
@@ -112,8 +122,21 @@ fn remove(text: &str, needle: &str, fold: bool) -> String {
     out
 }
 
-// Reject key collisions; never silently discard an object member while rewriting.
+// Neutralize a lure only in inert string VALUES. Object keys are structural
+// identifiers: they are preserved byte-for-byte, and a marker embedded in a key
+// fails closed (None) because deleting key bytes would rename a field and change
+// message semantics rather than remove a decoy — e.g. `{"decoy_role":"admin"}`
+// must never become `{"role":"admin"}` (#39).
 fn rewrite(value: &Value, needles: &[String], fold: bool) -> Option<Value> {
+    let hit = |s: &str| {
+        needles.iter().any(|n| {
+            if fold {
+                s.to_ascii_lowercase().contains(&n.to_ascii_lowercase())
+            } else {
+                s.contains(n)
+            }
+        })
+    };
     let clean = |s: &str| {
         needles
             .iter()
@@ -130,8 +153,13 @@ fn rewrite(value: &Value, needles: &[String], fold: bool) -> Option<Value> {
         Value::Object(map) => {
             let mut result = Map::new();
             for (k, v) in map {
+                if hit(k) {
+                    return None;
+                }
+                // Keys are preserved verbatim, so collisions are impossible; the
+                // guard remains as a defensive invariant.
                 if result
-                    .insert(clean(k), rewrite(v, needles, fold)?)
+                    .insert(k.clone(), rewrite(v, needles, fold)?)
                     .is_some()
                 {
                     return None;
@@ -175,18 +203,94 @@ impl Engine {
     pub fn breadcrumb_enforced(&self) -> bool {
         self.0.breadcrumb_mode == "block" && !self.0.breadcrumb.is_empty()
     }
-    // Case-sensitive, mirroring the breadcrumb matcher in `request`.
-    pub fn breadcrumb_hit(&self, body: &[u8]) -> bool {
-        !self.0.breadcrumb.is_empty() && String::from_utf8_lossy(body).contains(&self.0.breadcrumb)
+    // Any active block mode makes the policy an enforcing filter: uninspectable
+    // traffic then fails closed rather than passing through (#38).
+    pub fn enforcing(&self) -> bool {
+        self.response_enforced()
+            || (self.0.sentinel_mode == "block" && !self.0.decoy_tools.is_empty())
+            || self.breadcrumb_enforced()
+    }
+    // Configuration must not turn a bounded request into unbounded scan work.
+    pub fn within_limits(&self) -> bool {
+        let detectors_ok = |v: &[String]| {
+            v.len() <= MAX_DETECTORS && v.iter().all(|s| s.len() <= MAX_DETECTOR_LEN)
+        };
+        let aggregate: usize = self
+            .0
+            .honeytokens
+            .iter()
+            .chain(self.0.decoy_tools.iter())
+            .map(String::len)
+            .sum::<usize>()
+            + self.0.breadcrumb.len();
+        detectors_ok(&self.0.honeytokens)
+            && detectors_ok(&self.0.decoy_tools)
+            && self.0.breadcrumb.len() <= MAX_BREADCRUMB_LEN
+            && aggregate <= MAX_CONFIG_BYTES
+    }
+    // A locally-generated denial must never reflect a planted lure back to the
+    // caller. Inspect the DECODED candidate so an escaped marker in a reflected
+    // `id` (e.g. a newline serialized as `\n`) is still caught, and withhold if
+    // the candidate cannot be parsed to prove safe reflection (#44).
+    pub fn echoes_protected(&self, denial: &[u8]) -> bool {
+        match parse(denial) {
+            Some(value) => {
+                self.honey(denial, &value)
+                    || (!self.0.breadcrumb.is_empty()
+                        && contains(&value, &self.0.breadcrumb, false))
+            }
+            None => true,
+        }
+    }
+    // True when seeding is enabled and would attempt to plant the breadcrumb into
+    // this correlated tools/list response. Used only to emit an explicit
+    // skip event when the non-expanding edit cannot fit (#41).
+    pub fn seed_applicable(&self, body: &[u8], id: Option<&Value>) -> bool {
+        if self.0.seeding != "enabled" || self.0.breadcrumb.is_empty() {
+            return false;
+        }
+        let Some(value) = parse(body).filter(envelope) else {
+            return false;
+        };
+        if value.get("method").is_some()
+            || value.get("error").is_some()
+            || id.is_none()
+            || value.get("id") != id
+        {
+            return false;
+        }
+        value
+            .get("result")
+            .and_then(|v| v.get("tools"))
+            .and_then(Value::as_array)
+            .is_some_and(|tools| {
+                tools.iter().any(|t| {
+                    !t.get("description")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .contains(&self.0.breadcrumb)
+                })
+            })
     }
     fn honey(&self, body: &[u8], value: &Value) -> bool {
+        let fold = !self.0.case_sensitive;
         let raw = String::from_utf8_lossy(body);
+        let raw_folded = if fold {
+            Some(raw.to_ascii_lowercase())
+        } else {
+            None
+        };
         self.0.honeytokens.iter().any(|n| {
-            contains(value, n, !self.0.case_sensitive)
-                || if self.0.case_sensitive {
-                    raw.contains(n)
-                } else {
-                    raw.to_ascii_lowercase().contains(&n.to_ascii_lowercase())
+            // Fold each needle once per call, not at every visited JSON node.
+            let folded = if fold {
+                n.to_ascii_lowercase()
+            } else {
+                n.clone()
+            };
+            contains(value, &folded, fold)
+                || match &raw_folded {
+                    Some(r) => r.contains(&folded),
+                    None => raw.contains(n),
                 }
         })
     }
@@ -211,12 +315,23 @@ impl Engine {
         let original_method = original.get("method").cloned();
         let mut final_value = original;
         if !blocked && breadcrumb && self.0.breadcrumb_mode == "sanitize" {
+            // Arguments to tools/call are semantically load-bearing: stripping a
+            // marker there could synthesize or alter a privileged argument, so we
+            // fail closed instead of rewriting them (#39). Sanitization is limited
+            // to inert string values outside tool-call parameters.
+            if final_value.get("method").and_then(Value::as_str) == Some("tools/call")
+                && final_value
+                    .get("params")
+                    .is_some_and(|p| contains(p, &self.0.breadcrumb, false))
+            {
+                return Err("unsafe-sanitization-argument");
+            }
             final_value = rewrite(
                 &final_value,
                 std::slice::from_ref(&self.0.breadcrumb),
                 false,
             )
-            .ok_or("ambiguous-sanitization")?;
+            .ok_or("unsafe-sanitization-key")?;
             output = serde_json::to_vec(&final_value).map_err(|_| "serialization")?;
             if output.len() > body.len()
                 || final_value.get("id").cloned() != original_id
