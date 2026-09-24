@@ -124,6 +124,67 @@ fn breadcrumb_denial_cannot_echo_a_protected_id() {
     assert!(!String::from_utf8_lossy(response.body()).contains("lure"));
 }
 #[test]
+fn escaped_breadcrumb_in_id_is_not_echoed_in_a_denial() {
+    // Breadcrumb block is the sole trigger; the marker sits in the JSON-RPC id and,
+    // once serialized into the denial, is JSON-escaped. Decoded containment must
+    // still catch it and withhold the reflection (#44).
+    for marker in ["a\nb", "a\tb", "a\"b", "a\\b"] {
+        let configuration = json!({
+            "honeytokens": ["secret"], "decoyTools": ["admin"], "breadcrumb": marker,
+            "honeytokenMode": "monitor", "sentinelMode": "monitor", "breadcrumbMode": "block",
+            "seeding": "disabled", "caseSensitive": false
+        })
+        .to_string();
+        let body = json!({"jsonrpc":"2.0","id":marker,"method":"ping"}).to_string();
+        let mut test = UnitTestBuilder::default()
+            .with_config(configuration)
+            .with_backend(backend)
+            .with_entrypoint(super::configure);
+        let response = test.request(request(&body));
+        assert_eq!(response.status_code(), 403, "marker {:?}", marker);
+        assert!(response.body().is_empty(), "marker {:?}", marker);
+    }
+}
+#[test]
+fn sentinel_denial_in_sanitize_mode_does_not_echo_a_breadcrumb_id() {
+    // Block is triggered by Sentinel while breadcrumb mode is `sanitize` (so the
+    // old block-only containment guard would not have run); the breadcrumb in the
+    // id must still be withheld (#44).
+    let configuration = json!({
+        "honeytokens": ["secret"], "decoyTools": ["admin"], "breadcrumb": "lure",
+        "honeytokenMode": "monitor", "sentinelMode": "block", "breadcrumbMode": "sanitize",
+        "seeding": "disabled", "caseSensitive": false
+    })
+    .to_string();
+    let body = r#"{"jsonrpc":"2.0","id":"lure","method":"tools/call","params":{"name":"admin"}}"#;
+    let mut test = UnitTestBuilder::default()
+        .with_config(configuration)
+        .with_backend(backend)
+        .with_entrypoint(super::configure);
+    let response = test.request(request(body));
+    assert_eq!(response.status_code(), 403);
+    assert!(!String::from_utf8_lossy(response.body()).contains("lure"));
+}
+#[test]
+fn monitor_mode_forwards_uninspectable_traffic_instead_of_blocking() {
+    // No enforcing mode is active, so an uninspectable body (no JSON media / length)
+    // must pass through untouched rather than be rejected 415 (#38).
+    let trace = Rc::new(TraceBackend::new(backend));
+    let configuration = json!({
+        "honeytokens": ["secret"], "decoyTools": ["admin"], "breadcrumb": "lure",
+        "honeytokenMode": "monitor", "sentinelMode": "monitor", "breadcrumbMode": "observe",
+        "seeding": "disabled", "caseSensitive": false
+    })
+    .to_string();
+    let mut test = UnitTestBuilder::default()
+        .with_config(configuration)
+        .with_backend(Rc::clone(&trace))
+        .with_entrypoint(super::configure);
+    let response = test.request(UnitHttpRequest::post().with_body("not-json-no-length"));
+    assert_eq!(response.status_code(), 200);
+    assert!(trace.next().is_some());
+}
+#[test]
 fn oversized_denial_must_not_bypass_decoded_containment() {
     let mut configuration: serde_json::Value = serde_json::from_str(&config()).unwrap();
     configuration["honeytokens"] = json!(["a\nb"]);
