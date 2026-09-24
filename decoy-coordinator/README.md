@@ -87,7 +87,9 @@ validation, authentication, ABAC/Global Access and any integrity/signature
 verification, so its (values-only) sanitization never mutates a body those policies
 already trusted. On the response path the chain runs in reverse; verify the exact
 request order and resulting reverse response order in Managed or Connected Mode
-(Local Mode cannot exercise the included MCP policies).
+(Local Mode cannot exercise the included MCP policies). The exact chain, request
+matrix and per-detector assertions are in
+[docs/MANAGED-CHAIN-VERIFICATION.md](docs/MANAGED-CHAIN-VERIFICATION.md).
 
 ## Configuration
 
