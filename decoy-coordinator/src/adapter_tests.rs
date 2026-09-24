@@ -185,6 +185,107 @@ fn monitor_mode_forwards_uninspectable_traffic_instead_of_blocking() {
     assert!(trace.next().is_some());
 }
 #[test]
+fn enforcing_mode_fails_closed_on_an_sse_request() {
+    // text/event-stream is out of the bounded-JSON scope. Under an enforcing
+    // config it must fail closed in the header phase and never buffer (#38).
+    let trace = Rc::new(TraceBackend::new(backend));
+    let body = "event: message\ndata: {\"secret\":1}\n\n";
+    let mut test = UnitTestBuilder::default()
+        .with_config(config())
+        .with_backend(Rc::clone(&trace))
+        .with_entrypoint(super::configure);
+    let response = test.request(
+        UnitHttpRequest::post()
+            .with_header("content-type", "text/event-stream")
+            .with_header("content-length", body.len().to_string())
+            .with_body(body),
+    );
+    assert_eq!(response.status_code(), 415);
+    assert!(trace.next().is_none());
+}
+#[test]
+fn enforcing_mode_fails_closed_on_a_missing_content_length() {
+    // A JSON media type without an exact decimal Content-Length is uninspectable
+    // (chunked / unknown length) and fails closed when enforcing (#38).
+    let trace = Rc::new(TraceBackend::new(backend));
+    let mut test = UnitTestBuilder::default()
+        .with_config(config())
+        .with_backend(Rc::clone(&trace))
+        .with_entrypoint(super::configure);
+    let response = test.request(
+        UnitHttpRequest::post()
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#),
+    );
+    assert_eq!(response.status_code(), 415);
+    assert!(trace.next().is_none());
+}
+#[test]
+fn enforcing_mode_fails_closed_on_compressed_content() {
+    // A Content-Encoding means the declared length is post-compression bytes we
+    // cannot scan; enforcing must reject rather than pass an opaque body (#38).
+    let trace = Rc::new(TraceBackend::new(backend));
+    let body = r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#;
+    let mut test = UnitTestBuilder::default()
+        .with_config(config())
+        .with_backend(Rc::clone(&trace))
+        .with_entrypoint(super::configure);
+    let response = test.request(request(body).with_header("content-encoding", "gzip"));
+    assert_eq!(response.status_code(), 415);
+    assert!(trace.next().is_none());
+}
+#[test]
+fn a_body_at_exactly_64_kib_is_inspected_and_one_byte_over_is_rejected() {
+    // The 64 KiB ceiling is inclusive: a valid envelope of exactly LIMIT bytes is
+    // inspected and (decoy-free) forwarded; LIMIT+1 fails closed (#38).
+    let prefix = r#"{"jsonrpc":"2.0","id":1,"method":"ping","params":{"pad":""#;
+    let suffix = r#""}}"#;
+    let at_limit = {
+        let pad = super::LIMIT - prefix.len() - suffix.len();
+        format!("{prefix}{}{suffix}", "a".repeat(pad))
+    };
+    assert_eq!(at_limit.len(), super::LIMIT);
+    let trace = Rc::new(TraceBackend::new(backend));
+    let mut test = UnitTestBuilder::default()
+        .with_config(config())
+        .with_backend(Rc::clone(&trace))
+        .with_entrypoint(super::configure);
+    let response = test.request(request(&at_limit));
+    assert_eq!(response.status_code(), 200);
+    assert!(trace.next().is_some());
+
+    let over_limit = format!("{prefix}{}{suffix}", "a".repeat(super::LIMIT));
+    assert!(over_limit.len() > super::LIMIT);
+    let trace = Rc::new(TraceBackend::new(backend));
+    let mut test = UnitTestBuilder::default()
+        .with_config(config())
+        .with_backend(Rc::clone(&trace))
+        .with_entrypoint(super::configure);
+    let response = test.request(request(&over_limit));
+    assert_eq!(response.status_code(), 415);
+    assert!(trace.next().is_none());
+}
+#[test]
+fn an_sse_response_is_forwarded_unbuffered_not_redacted() {
+    // A streamed response carrying the honeytoken is out of scope: it is forwarded
+    // as-is (no buffering, so no stall) rather than redacted. This is the documented
+    // scope limit — pair with MCP Support/Global Access/ABAC for SSE (#38).
+    let sse = "event: message\ndata: {\"text\":\"secret\"}\n\n";
+    let mut test = UnitTestBuilder::default()
+        .with_config(config())
+        .with_backend(move |_: UnitHttpRequest| {
+            UnitHttpResponse::new(200)
+                .with_header("content-type", "text/event-stream")
+                .with_header("content-length", sse.len().to_string())
+                .with_body(sse.as_bytes())
+        })
+        .with_entrypoint(super::configure);
+    let response = test.request(request(r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#));
+    assert_eq!(response.status_code(), 200);
+    // Not redacted: the skip path leaves the streamed body untouched.
+    assert!(String::from_utf8_lossy(response.body()).contains("secret"));
+}
+#[test]
 fn oversized_denial_must_not_bypass_decoded_containment() {
     let mut configuration: serde_json::Value = serde_json::from_str(&config()).unwrap();
     configuration["honeytokens"] = json!(["a\nb"]);

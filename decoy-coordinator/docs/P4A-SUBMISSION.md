@@ -110,7 +110,8 @@ marker in a key or inside `tools/call` arguments fails closed instead of rewriti
 **Where should it sit in the policy chain?** After MCP Support, schema validation,
 authentication, ABAC/Global Access and any integrity/signature verification (see
 the interoperability matrix in the README). Prove the recommended chain in
-Managed/Connected Mode; Local Mode cannot exercise the included MCP policies.
+Managed/Connected Mode; Local Mode cannot exercise the included MCP policies (the
+chain, request matrix and assertions are in `docs/MANAGED-CHAIN-VERIFICATION.md`).
 
 **Which detections raise a Monitoring violation?** Only Decoy-Tool Sentinel hits.
 Honeytoken and Breadcrumb hits are logged (warning level) but do not raise a PDK

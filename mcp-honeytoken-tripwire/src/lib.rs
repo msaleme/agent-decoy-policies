@@ -253,6 +253,16 @@ impl Tripwire {
                 return Err(anyhow!("decoyIds must be non-blank and unique"));
             }
         }
+        // Validate the mode against an allow-list instead of treating any
+        // non-"block" string as monitor. A typo like "blcok" would otherwise
+        // silently disable enforcement, unlike the sibling fail-closed
+        // validations above (#35).
+        if !["monitor", "block"]
+            .iter()
+            .any(|m| config.mode.eq_ignore_ascii_case(m))
+        {
+            return Err(anyhow!("mode must be \"monitor\" or \"block\""));
+        }
         let case_sensitive = config.case_sensitive;
         let needles = config
             .honeytokens
@@ -1520,6 +1530,35 @@ mod test {
             }))
             .unwrap();
             assert!(super::Tripwire::from_config(&config).is_err());
+        }
+    }
+
+    #[test]
+    fn unknown_mode_fails_closed_instead_of_degrading_to_monitor() {
+        // A misspelled or unsupported mode must be rejected at startup rather
+        // than silently disabling enforcement (#35).
+        for mode in ["blcok", "enforce", "Block ", "", "monitorr"] {
+            let config: super::Config = serde_json::from_value(json!({
+                "honeytokens":[DECOY], "decoyIds":["one"], "mode":mode,
+                "alertHeader":"x-agent-decoy-tripwire", "caseSensitive":false
+            }))
+            .unwrap();
+            assert!(
+                super::Tripwire::from_config(&config).is_err(),
+                "mode {:?} must be rejected",
+                mode
+            );
+        }
+        // The two supported modes still load, case-insensitively.
+        for mode in ["monitor", "block", "BLOCK", "Monitor"] {
+            let config: super::Config = serde_json::from_value(json!({
+                "honeytokens":[DECOY], "decoyIds":["one"], "mode":mode,
+                "alertHeader":"x-agent-decoy-tripwire", "caseSensitive":false
+            }))
+            .unwrap();
+            let tripwire = super::Tripwire::from_config(&config)
+                .unwrap_or_else(|_| panic!("mode {:?} must load", mode));
+            assert_eq!(tripwire.block, mode.eq_ignore_ascii_case("block"));
         }
     }
     fn unsupported_json_cases() -> Vec<String> {

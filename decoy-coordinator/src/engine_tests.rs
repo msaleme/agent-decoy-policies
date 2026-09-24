@@ -178,6 +178,49 @@ fn seeding_is_best_effort_and_skips_a_compact_response() {
     assert!(e.seed_applicable(body, Some(&json!(1))));
 }
 #[test]
+fn worst_case_scan_stays_within_a_bounded_latency_budget() {
+    // Guards against an accidental super-linear regression in the per-request scan
+    // cost. It is a coarse budget rather than a Criterion micro-benchmark so it adds
+    // no dependency and runs under `--locked --offline` (#40). It exercises the
+    // maximum allowed configuration (case-folded, so the more expensive path) against
+    // a near-limit body with many nodes; real cost is a few ms, so the budget is
+    // deliberately loose to avoid CI flakiness.
+    let honeytokens: Vec<String> = (0..MAX_DETECTORS)
+        .map(|i| format!("decoy-{i:0>93}"))
+        .collect();
+    let engine = Engine(
+        serde_json::from_value(json!({
+            "honeytokens": honeytokens, "decoyTools": ["admin"], "breadcrumb": "lure",
+            "honeytokenMode": "monitor", "sentinelMode": "monitor",
+            "breadcrumbMode": "observe", "seeding": "disabled", "caseSensitive": false
+        }))
+        .unwrap(),
+    );
+    assert!(
+        engine.within_limits(),
+        "the stressed config must be an accepted worst case"
+    );
+    let items: Vec<String> = (0..1500)
+        .map(|i| format!("item-{i}-payload-value"))
+        .collect();
+    let body = json!({"jsonrpc":"2.0","id":1,"method":"ping","params":{"items":items}}).to_string();
+    assert!(body.len() <= LIMIT, "stress body must fit the 64 KiB scope");
+    let body = body.into_bytes();
+
+    let start = std::time::Instant::now();
+    for _ in 0..50 {
+        let plan = engine.request(&body).expect("valid envelope");
+        assert!(!plan.blocked);
+        let _ = engine.response(&body, Some(&json!(1)));
+    }
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed < std::time::Duration::from_secs(2),
+        "worst-case scan budget exceeded: {:?} for 50 request+response passes",
+        elapsed
+    );
+}
+#[test]
 fn response_monitor_reports_hit_without_mutation() {
     let mut e = engine();
     e.0.honeytoken_mode = "monitor".into();
