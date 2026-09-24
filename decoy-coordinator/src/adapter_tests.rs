@@ -111,6 +111,19 @@ fn local_denial_cannot_echo_a_protected_id() {
     assert!(!String::from_utf8_lossy(response.body()).contains("secret"));
 }
 #[test]
+fn breadcrumb_denial_cannot_echo_a_protected_id() {
+    // Block triggered purely by breadcrumb (honeytoken in monitor); the breadcrumb
+    // string sits in the JSON-RPC id, which deny() would otherwise echo back.
+    let configuration = json!({"honeytokens":["secret"],"decoyTools":["admin"],"breadcrumb":"lure","honeytokenMode":"monitor","sentinelMode":"block","breadcrumbMode":"block","seeding":"enabled","caseSensitive":false}).to_string();
+    let mut test = UnitTestBuilder::default()
+        .with_config(configuration)
+        .with_backend(backend)
+        .with_entrypoint(super::configure);
+    let response = test.request(request(r#"{"jsonrpc":"2.0","id":"lure","method":"ping"}"#));
+    assert_eq!(response.status_code(), 403);
+    assert!(!String::from_utf8_lossy(response.body()).contains("lure"));
+}
+#[test]
 fn oversized_denial_must_not_bypass_decoded_containment() {
     let mut configuration: serde_json::Value = serde_json::from_str(&config()).unwrap();
     configuration["honeytokens"] = json!(["a\nb"]);
