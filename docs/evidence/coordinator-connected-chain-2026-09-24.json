@@ -1,0 +1,587 @@
+{
+  "recordedAt": "2026-09-25T00:01:03.660411+00:00",
+  "outcome": "blocked_before_matrix",
+  "liveRunComplete": false,
+  "sourceCommit": "b117fec54a6d534a43011f2d742c6527f15979b7",
+  "sourceTag": {
+    "name": "v0.1.0-rc.1",
+    "commit": "f442cba95082b2fcb60c26c0613e327d420635a2",
+    "unchanged": true
+  },
+  "flexVersion": "1.14.0",
+  "pdkVersion": "1.10.0",
+  "rustVersion": "1.89.0",
+  "wasmSha256": "59c813f6083b968bab41872b560a5e387dd2f11eeaad4bad4e65974e6d9895de",
+  "libraryTests": {
+    "passed": 34,
+    "failed": 0
+  },
+  "apiInstanceId": 21196583,
+  "gatewayId": "2d004a88-8a40-46c6-917e-cd6499c8d50d",
+  "testAssets": [
+    {
+      "assetId": "coordinator-chain-20260924-dev",
+      "version": "0.0.1-20260924233809"
+    },
+    {
+      "assetId": "coordinator-chain-20260924-flex-dev",
+      "version": "0.0.1-20260924233809"
+    },
+    {
+      "assetId": "coordinator-chain-20260924-mcp",
+      "version": "0.0.1"
+    }
+  ],
+  "containers": [
+    {
+      "name": "coordinator-chain-20260924-gateway",
+      "running": true,
+      "image": "mulesoft/flex-gateway:1.14.0",
+      "imageId": "sha256:b21e1d901492bc2d2604848eff63e8c887c44a599f749d68212c5d19471452d1",
+      "memoryBytes": 1073741824,
+      "memorySwapBytes": 1073741824,
+      "ports": {
+        "8081/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "18084"
+          }
+        ]
+      },
+      "networks": [
+        "coordinator-chain-20260924"
+      ]
+    },
+    {
+      "name": "coordinator-chain-20260924-backend",
+      "running": true,
+      "image": "agent-decoy-streaming:review",
+      "imageId": "sha256:1f80beec434ae389946e338d611321bebd68f8d39f9032857f2ab360076d4728",
+      "memoryBytes": 134217728,
+      "memorySwapBytes": 134217728,
+      "ports": {},
+      "networks": [
+        "coordinator-chain-20260924"
+      ]
+    }
+  ],
+  "chain": [
+    {
+      "requestOrder": 1,
+      "policyId": 9336148,
+      "definition": {
+        "assetId": "mcp-support",
+        "assetVersion": "1.1.1"
+      },
+      "implementation": {
+        "assetId": "mcp-support-policy-flex",
+        "version": "1.1.1",
+        "technology": "flexGateway",
+        "minRuntimeVersion": "1.9.3"
+      },
+      "configuration": {
+        "injectMcpNameHeaders": false
+      }
+    },
+    {
+      "requestOrder": 2,
+      "policyId": 9336149,
+      "definition": {
+        "assetId": "mcp-schema-validation",
+        "assetVersion": "1.3.0"
+      },
+      "implementation": {
+        "assetId": "mcp-schema-validation-policy-flex",
+        "version": "1.3.0",
+        "technology": "flexGateway",
+        "minRuntimeVersion": "1.11.4"
+      },
+      "configuration": {
+        "validateToolSchema": true,
+        "poisoningDetection": {
+          "drift": {
+            "enabled": true,
+            "action": "LogOnly"
+          },
+          "shadow": {
+            "enabled": false,
+            "action": "LogOnly",
+            "maxEditDistance": 2
+          },
+          "injection": {
+            "enabled": false,
+            "action": "LogOnly"
+          },
+          "maxToolsPerResponse": 200
+        }
+      }
+    },
+    {
+      "requestOrder": 3,
+      "policyId": 9336150,
+      "definition": {
+        "assetId": "client-id-enforcement",
+        "assetVersion": "1.3.3"
+      },
+      "implementation": {
+        "assetId": "client-id-enforcement-flex",
+        "version": "1.2.0",
+        "technology": "flexGateway",
+        "minRuntimeVersion": "1.0.0"
+      },
+      "configuration": {
+        "credentialsOriginHasHttpBasicAuthenticationHeader": "customExpression",
+        "clientIdExpression": "#[attributes.headers['client_id']]",
+        "clientSecretExpression": "#[attributes.headers['client_secret']]"
+      }
+    },
+    {
+      "requestOrder": 4,
+      "policyId": 9336151,
+      "definition": {
+        "assetId": "mcp-global-access-policy",
+        "assetVersion": "1.0.1"
+      },
+      "implementation": {
+        "assetId": "mcp-global-access-policy-flex",
+        "version": "1.0.2",
+        "technology": "flexGateway",
+        "minRuntimeVersion": "1.9.3"
+      },
+      "configuration": {
+        "rules": [
+          {
+            "rule": "Allow",
+            "match_type": "literal",
+            "value": "legitimate_tool"
+          },
+          {
+            "rule": "Allow",
+            "match_type": "literal",
+            "value": "inert_decoy"
+          },
+          {
+            "rule": "Allow",
+            "match_type": "literal",
+            "value": "honey_response"
+          }
+        ]
+      }
+    },
+    {
+      "requestOrder": 5,
+      "policyId": 9336152,
+      "definition": {
+        "assetId": "mcp-access-control",
+        "assetVersion": "1.0.2"
+      },
+      "implementation": {
+        "assetId": "mcp-access-control-policy-flex",
+        "version": "1.0.6",
+        "technology": "flexGateway",
+        "minRuntimeVersion": "1.9.3"
+      },
+      "configuration": {
+        "authType": "ClientId",
+        "rules": [
+          "permit(principal,action,resource);"
+        ]
+      }
+    },
+    {
+      "requestOrder": 6,
+      "policyId": 9336153,
+      "definition": {
+        "assetId": "coordinator-chain-20260924-dev",
+        "assetVersion": "0.0.1-20260924233809"
+      },
+      "implementation": {
+        "assetId": "coordinator-chain-20260924-flex-dev",
+        "version": "0.0.1-20260924233809",
+        "technology": "flexGateway",
+        "minRuntimeVersion": "1.14.0"
+      },
+      "configuration": {
+        "honeytokens": [
+          "synthetic_honeytoken_42"
+        ],
+        "decoyTools": [
+          "inert_decoy"
+        ],
+        "breadcrumb": "coordinator_lure_42",
+        "honeytokenMode": "monitor",
+        "sentinelMode": "monitor",
+        "breadcrumbMode": "observe",
+        "seeding": "disabled",
+        "caseSensitive": false
+      }
+    }
+  ],
+  "deployment": {
+    "initialPostStatus": 201,
+    "initialUpdatedDate": "2026-09-24T23:44:28.832Z",
+    "observations": [
+      {
+        "at": "2026-09-24T23:48:30.813131+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:48:34.292839+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:48:37.861605+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:48:42.032713+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:48:45.722211+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:48:49.363007+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:48:53.501079+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:48:57.146775+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:49:00.936008+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:49:04.437649+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:49:08.644821+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:49:12.632275+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:49:16.352636+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:49:20.040128+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:49:23.491294+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:49:27.011279+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:49:30.747205+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:49:34.198002+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:49:37.663912+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:49:41.391916+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:49:44.949063+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:49:48.580877+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:49:52.204972+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      },
+      {
+        "at": "2026-09-24T23:49:55.755195+00:00",
+        "httpStatus": 200,
+        "status": "active",
+        "updatedDate": "2026-09-24T23:44:28.832Z"
+      }
+    ],
+    "uiSaveAndApplyCompleted": false,
+    "activeUpdatingActiveVerified": false
+  },
+  "monitoringBaseline": {
+    "dataset": "mulesoft.api.summary",
+    "queriedAt": "2026-09-24T23:55:45.137772+00:00",
+    "startEpochMs": 1790293380000,
+    "endEpochMs": 1790294144101,
+    "httpStatus": 200,
+    "rows": [],
+    "nextPage": null,
+    "interpretation": "Empty pre-traffic result only; export of actual test traffic remains unverified"
+  },
+  "matrix": [
+    {
+      "case": 1,
+      "name": "Observe-first clean tools/list",
+      "expected": "200; unchanged body; Schema Validation clean",
+      "status": "not_run",
+      "httpStatus": null,
+      "backendCalls": null,
+      "violationCount": null,
+      "requestDisposition": null
+    },
+    {
+      "case": 2,
+      "name": "Observe-first decoy tools/call",
+      "expected": "200; forwarded; Sentinel-attributed Monitoring violation only",
+      "status": "not_run",
+      "httpStatus": null,
+      "backendCalls": null,
+      "violationCount": null,
+      "requestDisposition": null
+    },
+    {
+      "case": 3,
+      "name": "Sentinel block decoy tools/call",
+      "expected": "200; JSON-RPC -32008; backend not reached; Sentinel violation",
+      "status": "not_run",
+      "httpStatus": null,
+      "backendCalls": null,
+      "violationCount": null,
+      "requestDisposition": null
+    },
+    {
+      "case": 4,
+      "name": "Honeytoken block response",
+      "expected": "Bounded JSON redacted; no honeytoken-only Monitoring violation",
+      "status": "not_run",
+      "httpStatus": null,
+      "backendCalls": null,
+      "violationCount": null,
+      "requestDisposition": null
+    },
+    {
+      "case": 5,
+      "name": "Seeding with RemoveTool",
+      "expected": "Seeded tool removed or response blocked; descriptor-drift conflict",
+      "status": "not_run",
+      "httpStatus": null,
+      "backendCalls": null,
+      "violationCount": null,
+      "requestDisposition": null
+    },
+    {
+      "case": 6,
+      "name": "Enforcing text/event-stream request",
+      "expected": "415; backend not reached",
+      "status": "not_run",
+      "httpStatus": null,
+      "backendCalls": null,
+      "violationCount": null,
+      "requestDisposition": null
+    },
+    {
+      "case": 7,
+      "name": "Tool Mapping mapped decoy",
+      "expected": "200; JSON-RPC -32008 with Coordinator configured on mapped name",
+      "status": "not_run",
+      "httpStatus": null,
+      "backendCalls": null,
+      "violationCount": null,
+      "requestDisposition": null
+    }
+  ],
+  "blocker": "Mandatory UI Save & Apply not completed: Chrome reports DevTools remote debugging is disallowed by the system admin. API deployment alternative requires an explicit runbook deviation.",
+  "startupObservations": [
+    {
+      "component": "MCP Schema Validation 1.3.0",
+      "message": "No Exchange asset is bound; validateToolSchema=true degrades to JSON-RPC-only and poisoningDetection=true fails closed on tools/list (-32603).",
+      "confirmedInteropDefect": false,
+      "scope": "Startup warning before required UI configuration push; no traffic proof."
+    }
+  ],
+  "cleanup": {
+    "startedAt": "2026-09-24T23:59:20.040391+00:00",
+    "resources": [
+      {
+        "kind": "contract",
+        "id": 9420552,
+        "deleteStatus": 204,
+        "verification": 404
+      },
+      {
+        "kind": "api",
+        "id": 21196583,
+        "deleteStatus": 204,
+        "verification": 404
+      },
+      {
+        "kind": "clientApplication",
+        "id": 188950463,
+        "deleteStatus": 204,
+        "verification": 404
+      },
+      {
+        "kind": "exchangeAsset",
+        "id": {
+          "assetId": "coordinator-chain-20260924-flex-dev",
+          "version": "0.0.1-20260924233809"
+        },
+        "deleteStatus": 405,
+        "verification": 200
+      },
+      {
+        "kind": "contract",
+        "id": 9420552,
+        "deleteStatus": 404,
+        "verification": 404
+      },
+      {
+        "kind": "api",
+        "id": 21196583,
+        "deleteStatus": 404,
+        "verification": 404
+      },
+      {
+        "kind": "clientApplication",
+        "id": 188950463,
+        "deleteStatus": 404,
+        "verification": 404
+      },
+      {
+        "kind": "exchangeAsset",
+        "id": {
+          "assetId": "coordinator-chain-20260924-flex-dev",
+          "version": "0.0.1-20260924233809"
+        },
+        "deleteStatus": 204,
+        "verification": 404
+      },
+      {
+        "kind": "exchangeAsset",
+        "id": {
+          "assetId": "coordinator-chain-20260924-dev",
+          "version": "0.0.1-20260924233809"
+        },
+        "deleteStatus": 204,
+        "verification": 404
+      },
+      {
+        "kind": "exchangeAsset",
+        "id": {
+          "assetId": "coordinator-chain-20260924-mcp",
+          "version": "0.0.1"
+        },
+        "deleteStatus": 204,
+        "verification": 404
+      },
+      {
+        "kind": "container",
+        "id": "coordinator-chain-20260924-gateway",
+        "deleteStatus": 0,
+        "verification": "absent"
+      },
+      {
+        "kind": "container",
+        "id": "coordinator-chain-20260924-backend",
+        "deleteStatus": 0,
+        "verification": "absent"
+      },
+      {
+        "kind": "registration",
+        "id": "2d004a88-8a40-46c6-917e-cd6499c8d50d",
+        "deleteStatus": 0,
+        "verification": "flexctl completed"
+      },
+      {
+        "kind": "gateway",
+        "id": "2d004a88-8a40-46c6-917e-cd6499c8d50d",
+        "deleteStatus": 200,
+        "verification": {
+          "status": "DELETED",
+          "connectedReplicas": 0
+        }
+      },
+      {
+        "kind": "localIdentity",
+        "id": "isolated directory",
+        "deleteStatus": 0,
+        "verification": "removed after remote deletion verification"
+      },
+      {
+        "kind": "network",
+        "id": "coordinator-chain-20260924",
+        "deleteStatus": 0,
+        "verification": "absent"
+      }
+    ],
+    "completedAt": "2026-09-25T00:00:19.944458+00:00",
+    "allDeleted": true
+  },
+  "limitations": [
+    "No seven-case matrix assertion or per-detector violation attribution has been established.",
+    "Monitoring disposition is not proof of backend enforcement.",
+    "Host-failure / response-termination containment remains unverified.",
+    "Headers were not used as trusted provenance."
+  ]
+}

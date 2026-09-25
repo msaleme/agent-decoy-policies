@@ -42,6 +42,16 @@ PDK cleanup selects shared labels.
 
 ## Remaining limitations and optional follow-up
 
+**Coordinator connected-chain update (2026-09-25):** The [disposable live run](COORDINATOR-CONNECTED-CHAIN-EVIDENCE.md)
+executed all seven cases with an approved API deployment substitution. Three
+passed, one was qualified, and three failed prescribed expectations. Sentinel
+monitor/block violations and honeytoken/breadcrumb-only attribution were verified;
+the all-pass portion of #42 remains open. Follow-up tracks
+[mapped-request inspection #48](https://github.com/msaleme/agent-decoy-policies/issues/48),
+[matrix assumptions #49](https://github.com/msaleme/agent-decoy-policies/issues/49),
+and [unchanged-tool schema drift #50](https://github.com/msaleme/agent-decoy-policies/issues/50).
+The evidence retains failed attempts and cleanup checks. No runtime behavior changed.
+
 The [preprint claim audit and follow-up plan](PREPRINT-CITATION-AND-FOLLOW-UPS.md)
 records mode vocabulary, matching scope, configuration overlap and protocol/batch
 proposals. These are pending design work, not implemented capabilities or reopened
