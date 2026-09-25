@@ -14,13 +14,23 @@ Never reuse a production API, gateway registration or Exchange asset identity;
 delete all test resources afterward (see `../../docs/CONNECTED-MONITORING-EVIDENCE.md`
 for the deletion discipline).
 
-## Connected attempt status
+## Connected live-run status
 
-The [2026-09-24 disposable Connected Mode attempt](../../docs/COORDINATOR-CONNECTED-CHAIN-EVIDENCE.md)
-provisioned the chain but was blocked before the mandatory UI Save & Apply gate.
-**All seven cases remain unrun; the live-verification gap is still open.** The
-record includes source/WASM identity, configuration inventory, an empty Monitoring
-baseline, and cleanup evidence. It does not establish OOTB interoperability.
+The [2026-09-25 disposable live run](../../docs/COORDINATOR-CONNECTED-CHAIN-EVIDENCE.md)
+executed all seven cases using an explicitly approved API deployment operation.
+**Three cases passed, one was qualified, and three failed their prescribed
+expectations; this is not an all-seven passing result.** Sentinel monitor/block
+attribution and bounded response redaction were verified. Cached discovery,
+seeding, event-stream rejection and Tool Mapping require the qualifications in
+the evidence. Supplemental drift controls also found removal of unchanged tools.
+
+Follow-up issues: [mapping/inspection #48](https://github.com/msaleme/agent-decoy-policies/issues/48),
+[test expectations #49](https://github.com/msaleme/agent-decoy-policies/issues/49),
+and [baseline schema drift #50](https://github.com/msaleme/agent-decoy-policies/issues/50).
+The original matrix below is preserved as the executed contract, including its
+failed assumptions; do not cite it as a passing result. The JSON records runtime
+configuration checks, Monitoring, infrastructure retries and resource deletion.
+Runtime behavior, enums and policy schemas were not changed.
 
 ## Chain under test
 
