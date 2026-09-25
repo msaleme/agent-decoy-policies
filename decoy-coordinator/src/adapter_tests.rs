@@ -204,10 +204,52 @@ fn enforcing_mode_fails_closed_on_an_sse_request() {
     assert!(trace.next().is_none());
 }
 #[test]
-fn enforcing_mode_fails_closed_on_a_missing_content_length() {
-    // A JSON media type without an exact decimal Content-Length is uninspectable
-    // (chunked / unknown length) and fails closed when enforcing (#38).
+fn a_json_body_with_a_dropped_content_length_is_still_inspected() {
+    // A trusted upstream MCP policy that rewrites the body (e.g. Tool Mapping, or
+    // this policy's own sanitization) drops Content-Length after set_body. Such a
+    // body is bounded and must be inspected, not rejected: a clean call reaches the
+    // backend, and a decoy is still caught and blocked before the backend (#48).
     let trace = Rc::new(TraceBackend::new(backend));
+    let mut test = UnitTestBuilder::default()
+        .with_config(config())
+        .with_backend(Rc::clone(&trace))
+        .with_entrypoint(super::configure);
+    let clean = test.request(
+        UnitHttpRequest::post()
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#),
+    );
+    assert_eq!(clean.status_code(), 200);
+    assert!(trace.next().is_some());
+
+    // The mapped-name decoy case from #48, reproduced in Local Mode: no
+    // Content-Length, decoy tools/call -> blocked in-band, backend not reached.
+    let trace = Rc::new(TraceBackend::new(backend));
+    let mut test = UnitTestBuilder::default()
+        .with_config(config())
+        .with_backend(Rc::clone(&trace))
+        .with_entrypoint(super::configure);
+    let decoy = test.request(
+        UnitHttpRequest::post()
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"admin"}}"#,
+            ),
+    );
+    assert_eq!(decoy.status_code(), 200);
+    assert!(String::from_utf8_lossy(decoy.body()).contains("-32008"));
+    assert!(trace.next().is_none());
+}
+#[test]
+fn an_undeclared_body_over_the_limit_still_fails_closed() {
+    // A missing Content-Length does not mean unbounded: a buffered body beyond
+    // 64 KiB is still rejected when enforcing, so #48 does not re-open oversized
+    // buffering.
+    let trace = Rc::new(TraceBackend::new(backend));
+    let body = format!(
+        r#"{{"jsonrpc":"2.0","id":1,"method":"ping","params":{{"pad":"{}"}}}}"#,
+        "a".repeat(super::LIMIT)
+    );
     let mut test = UnitTestBuilder::default()
         .with_config(config())
         .with_backend(Rc::clone(&trace))
@@ -215,9 +257,9 @@ fn enforcing_mode_fails_closed_on_a_missing_content_length() {
     let response = test.request(
         UnitHttpRequest::post()
             .with_header("content-type", "application/json")
-            .with_body(r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#),
+            .with_body(body.as_str()),
     );
-    assert_eq!(response.status_code(), 415);
+    assert_eq!(response.status_code(), 413);
     assert!(trace.next().is_none());
 }
 #[test]

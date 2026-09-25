@@ -22,9 +22,13 @@ exchange, so their block/sanitize/redact/seed actions are ordered deterministica
 instead of racing as independent filters.
 
 - **Scope:** bounded, unencoded, finite **single-envelope** JSON-RPC 2.0 only
-  (unencoded JSON media, exact `Content-Length` ≤ 64 KiB). It is **not** a generic
-  MCP Streamable HTTP policy: `text/event-stream` and other streamed, chunked,
-  compressed, non-JSON or oversized bodies are uninspectable and are never buffered.
+  (unencoded JSON media, buffered body ≤ 64 KiB). A `Content-Length`, when present,
+  must match the body exactly; when **absent** the JSON body is still inspected and
+  bounded against 64 KiB — an upstream policy such as Tool Mapping drops it after a
+  rewrite, so a missing length is not by itself uninspectable. It is **not** a
+  generic MCP Streamable HTTP policy: `text/event-stream` and other streamed,
+  compressed, non-JSON or present-but-oversized bodies are uninspectable and are
+  never buffered.
 - **Detection before mutation:** all three detectors evaluate the original body
   first; a required block wins over any sanitize/seed edit.
 - **Telemetry:** the policy emits **structured gateway log events** for a

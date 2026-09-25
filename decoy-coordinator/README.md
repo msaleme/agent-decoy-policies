@@ -9,14 +9,18 @@ configuration replacement for those policies.
 
 This policy inspects **bounded, unencoded, finite single-envelope JSON-RPC 2.0**
 only. It is deliberately not a generic MCP Streamable HTTP policy. Inspectable
-traffic is an unencoded JSON media type with an exact decimal `Content-Length` at
-most 64 KiB carrying one unambiguous JSON-RPC envelope. `text/event-stream` and
-other streamed bodies, chunked/unknown length, compressed content, non-JSON,
-oversized declared length, batches and duplicate members are **uninspectable or
-unsupported**, and are never buffered (so a long-lived stream cannot stall the
-filter). If your deployment relies on SSE MCP tool results, redaction/seeding on
-that leg does not apply — pair this policy with MuleSoft MCP Support / Global
-Access / ABAC, which do process MCP SSE.
+traffic is an unencoded JSON media type carrying one unambiguous JSON-RPC envelope
+whose buffered body is at most 64 KiB. A decimal `Content-Length`, when present,
+must match the body exactly; if it is **absent** the body is still inspected and
+bounded against the 64 KiB ceiling — a trusted upstream MCP policy (e.g. Tool
+Mapping) or this policy's own sanitization drops `Content-Length` after rewriting
+the body, so a missing length is not by itself uninspectable. `text/event-stream`
+and other streamed bodies (excluded by the media type), compressed content,
+non-JSON, a present-but-oversized/malformed declared length, batches and duplicate
+members are **uninspectable or unsupported**, and are never buffered (so a
+long-lived stream cannot stall the filter). If your deployment relies on SSE MCP
+tool results, redaction/seeding on that leg does not apply — pair this policy with
+MuleSoft MCP Support / Global Access / ABAC, which do process MCP SSE.
 
 ## Contract
 

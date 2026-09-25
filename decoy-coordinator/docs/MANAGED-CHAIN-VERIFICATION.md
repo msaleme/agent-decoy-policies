@@ -75,6 +75,57 @@ envelope, `content-type: application/json`, exact `content-length`.
 - **Violation attribution:** only Sentinel hits should raise a Monitoring policy
   violation (cases 2/3); honeytoken-only and breadcrumb-only hits must not.
 
+## Live-run corrections (#48 / #49 / #50)
+
+The 2026-09-25 run showed four of the prescribed expectations above do not match
+the behavior of the included policy chain. The original matrix is preserved as the
+executed contract; **the corrected expectations below supersede it** and are the
+contract a re-run must satisfy. Do not present the original rows as passing.
+
+- **Case 1 — discovery is cached, not a backend round-trip (#49).** With MCP Schema
+  Validation `validateToolSchema: true`, `tools/list` is served from the pinned
+  Exchange asset (0 backend calls), and the returned input schemas omit the
+  fixture's `additionalProperties: false`. This case therefore verifies a clean
+  200 and no Coordinator edit, but **not** an unchanged backend response and **not**
+  the Coordinator response path. Add a separate case that forces a backend
+  `tools/list` (a config where discovery is not asset-served) to exercise the
+  response leg.
+- **Case 5 + baseline drift — the seeding/drift beat is confounded (#49, #50).**
+  `validateToolSchema: true` makes descriptor-drift/poisoning detection **inactive**
+  (the two are mutually exclusive), so `RemoveTool` cannot be attributed to seeding
+  under that setting. Under `validateToolSchema: false` with drift `RemoveTool`, the
+  chain removed **all** tools as `inputSchema` drift **even with `seeding: disabled`
+  and backend descriptors byte-equal to the pinned asset** (#50) — an intermediate
+  policy normalizes `inputSchema` before the trusted-pin comparison, so removal is
+  not clean proof of a seeding conflict. Redesign the beat: isolate the descriptor
+  representation an intermediate policy emits vs. the pinned asset first (#50), then
+  demonstrate the seeding conflict only as the *incremental* `description` drift that
+  appears when `seeding: enabled` adds a breadcrumb to a tool that lacked one — never
+  as bare tool removal. Give the response enough whitespace capacity for the
+  non-growing seed edit.
+- **Case 6 — SSE is rejected by MCP Support, not the Coordinator (#49).** A JSON-RPC
+  body sent with `Content-Type: text/event-stream` was rejected **earlier in the
+  chain**: the client saw 200 / JSON-RPC `-32600` ("Invalid JSON RPC Request"), 0
+  backend calls — the Coordinator's own 415 never ran. The assertion this case
+  should make is **whole-chain fail-closed** (uninspectable transport never reaches
+  the backend), not a Coordinator-specific 415. The Coordinator's own SSE/enforcing
+  415 remains covered by the Local Mode suite
+  (`enforcing_mode_fails_closed_on_an_sse_request`).
+- **Case 7 — Tool Mapping tripped the Coordinator's admission, now loosened (#48).**
+  With MCP Tool Mapping ahead of the Coordinator, the mapped `tools/call` returned
+  **415 `uninspectable-body`** before any decoy matching, in **both** the
+  mapped-name and original-name `decoyTools` configs; only the un-mapped control
+  reached `-32008`. The exact framing Tool Mapping emits was **not instrumented** —
+  a dropped `Content-Length` after the body rewrite is the hypothesis. This policy's
+  admission has been loosened accordingly: a JSON body whose `Content-Length` is
+  **absent** is now inspected and bounded against the 64 KiB ceiling instead of being
+  rejected (see `a_json_body_with_a_dropped_content_length_is_still_inspected` and
+  `an_undeclared_body_over_the_limit_still_fails_closed` in the Local Mode suite; SSE,
+  compressed, and present-but-oversized/malformed lengths still fail closed). A re-run
+  must (a) **instrument** the actual content-type / content-length / transfer-encoding
+  the mapped request carries to confirm the root cause, then (b) re-verify Case 7
+  reaches `-32008` with the decoy configured on the **mapped** name.
+
 ## Automation hook
 
 An executable version belongs in this policy's own ignored

@@ -10,23 +10,56 @@ use pdk::logger;
 use pdk::policy_violation::PolicyViolations;
 use serde_json::{json, Value};
 
+/// Header-phase admission decision.
+enum Admit {
+    /// Not an unencoded JSON media type (SSE, compressed, non-JSON, missing or
+    /// malformed content-type, or an over-limit declared length): out of scope,
+    /// never buffered.
+    Uninspectable,
+    /// JSON media with a valid declared Content-Length within the 64 KiB ceiling.
+    Declared(usize),
+    /// JSON media with no declared Content-Length. A trusted upstream MCP policy
+    /// that rewrites the body — e.g. Tool Mapping, or this policy's own
+    /// sanitization — drops Content-Length after `set_body`, so a missing length
+    /// is NOT by itself uninspectable; the buffered body is bounded against LIMIT
+    /// instead (#48). SSE and other true streams are already excluded by the
+    /// media gate above, so this does not re-open streamed-body buffering.
+    Undeclared,
+}
 fn admission(
     content_type: Option<String>,
     length: Option<String>,
     encoding: Option<String>,
-) -> Option<usize> {
-    let media = content_type?.split(';').next()?.trim().to_ascii_lowercase();
+) -> Admit {
+    let media = match content_type {
+        Some(ct) => ct
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase(),
+        None => return Admit::Uninspectable,
+    };
     if !(media == "application/json"
         || (media.starts_with("application/") && media.ends_with("+json")))
         || encoding.is_some()
     {
-        return None;
+        return Admit::Uninspectable;
     }
-    let length = length?;
-    if length.is_empty() || !length.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
+    match length {
+        None => Admit::Undeclared,
+        Some(length) => {
+            // A present-but-malformed or over-limit length stays uninspectable so
+            // an oversized or garbled declared body still fails closed.
+            if length.is_empty() || !length.bytes().all(|b| b.is_ascii_digit()) {
+                return Admit::Uninspectable;
+            }
+            match length.parse::<usize>() {
+                Ok(n) if n <= LIMIT => Admit::Declared(n),
+                _ => Admit::Uninspectable,
+            }
+        }
     }
-    length.parse::<usize>().ok().filter(|n| *n <= LIMIT)
 }
 // Clean pass-through and no-op accounting: debug so operators are not drowned in
 // warning-log noise for ordinary traffic (#43).
@@ -72,28 +105,33 @@ async fn request_filter(
     if !headers.contains_body() {
         return Flow::Continue(None);
     }
-    let length = admission(
+    // Classify in the header phase, before any whole-body buffering. Uninspectable
+    // traffic (text/event-stream and other true streams, compressed, non-JSON, or
+    // an oversized/malformed declared length) fails closed when enforcing and
+    // otherwise passes through untouched (#38). A JSON body whose Content-Length a
+    // trusted upstream policy dropped is still inspected, bounded against LIMIT (#48).
+    let expected = match admission(
         headers.handler().header("content-type"),
         headers.handler().header("content-length"),
         headers.handler().header("content-encoding"),
-    );
-    // Uninspectable traffic (text/event-stream and other streamed bodies, chunked
-    // or unknown length, compressed, non-JSON, or an oversized declared length) is
-    // classified here in the header phase, before any whole-body buffering. In an
-    // enforcing mode we fail closed; otherwise we pass valid unrelated traffic
-    // through untouched rather than block it (#38).
-    let Some(length) = length else {
-        if engine.enforcing() {
-            alert("request", "inspect", "blocked", "uninspectable-body");
-            return Flow::Break(Response::new(415));
+    ) {
+        Admit::Uninspectable => {
+            if engine.enforcing() {
+                alert("request", "inspect", "blocked", "uninspectable-body");
+                return Flow::Break(Response::new(415));
+            }
+            event("request", "inspect", "skipped", "uninspectable-body");
+            return Flow::Continue(None);
         }
-        event("request", "inspect", "skipped", "uninspectable-body");
-        return Flow::Continue(None);
+        Admit::Declared(n) => Some(n),
+        Admit::Undeclared => None,
     };
     let state = headers.into_headers_body_state().await;
     let handler = state.handler();
     let original = handler.body();
-    if original.len() != length || original.len() > LIMIT {
+    // A declared length must match exactly; an undeclared body is only bounded.
+    let framing_ok = expected.is_none_or(|n| original.len() == n) && original.len() <= LIMIT;
+    if !framing_ok {
         if engine.enforcing() {
             alert("request", "inspect", "blocked", "invalid-framing");
             return Flow::Break(Response::new(413));
@@ -156,13 +194,17 @@ async fn response_filter(
     // compressed, non-JSON) are out of the bounded-JSON scope: do NOT enter body
     // buffering, which could stall on a long-lived stream, and do not attempt
     // redaction on them. This is a documented limitation (#38).
-    let Some(length) = admission(
+    let expected = match admission(
         headers.handler().header("content-type"),
         headers.handler().header("content-length"),
         headers.handler().header("content-encoding"),
-    ) else {
-        event("response", "inspect", "skipped", "uninspectable-body");
-        return;
+    ) {
+        Admit::Uninspectable => {
+            event("response", "inspect", "skipped", "uninspectable-body");
+            return;
+        }
+        Admit::Declared(n) => Some(n),
+        Admit::Undeclared => None,
     };
     let state = headers.into_headers_body_state().await;
     let handler = state.handler();
@@ -179,7 +221,8 @@ async fn response_filter(
             "honeytoken-match",
         );
     }
-    let output = if original.len() == length && original.len() <= LIMIT {
+    let bounded = expected.is_none_or(|n| original.len() == n) && original.len() <= LIMIT;
+    let output = if bounded {
         engine.response(&original, id.as_ref())
     } else if engine.response_enforced() {
         Vec::new()
