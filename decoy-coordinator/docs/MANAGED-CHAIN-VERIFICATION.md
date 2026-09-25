@@ -14,6 +14,14 @@ Never reuse a production API, gateway registration or Exchange asset identity;
 delete all test resources afterward (see `../../docs/CONNECTED-MONITORING-EVIDENCE.md`
 for the deletion discipline).
 
+## Connected attempt status
+
+The [2026-09-24 disposable Connected Mode attempt](../../docs/COORDINATOR-CONNECTED-CHAIN-EVIDENCE.md)
+provisioned the chain but was blocked before the mandatory UI Save & Apply gate.
+**All seven cases remain unrun; the live-verification gap is still open.** The
+record includes source/WASM identity, configuration inventory, an empty Monitoring
+baseline, and cleanup evidence. It does not establish OOTB interoperability.
+
 ## Chain under test
 
 Apply, in this **request** order (the response path runs in reverse):

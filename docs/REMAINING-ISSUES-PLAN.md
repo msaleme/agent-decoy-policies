@@ -42,6 +42,11 @@ PDK cleanup selects shared labels.
 
 ## Remaining limitations and optional follow-up
 
+**Coordinator connected-chain update (2026-09-24):** The [disposable chain attempt](COORDINATOR-CONNECTED-CHAIN-EVIDENCE.md)
+was blocked before its required UI Save & Apply. The seven-case matrix and
+per-detector Monitoring attribution remain unverified. The record must not be
+cited as completion of the live-run portion of #42. No runtime behavior changed.
+
 The [preprint claim audit and follow-up plan](PREPRINT-CITATION-AND-FOLLOW-UPS.md)
 records mode vocabulary, matching scope, configuration overlap and protocol/batch
 proposals. These are pending design work, not implemented capabilities or reopened
