@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- **Decoy Coordinator** (third-party review at `c31500c`, #53–#57):
+  - **Breaking (#54, #55):** requests are never rewritten. `breadcrumbMode: sanitize`
+    now blocks a request breadcrumb exactly like `block` (in-band `-32008`), because
+    no request field — e.g. `resources/read` `uri` or `prompts/get` `arguments` — is
+    provably inert to strip. This removes the refused-sanitization path that
+    forwarded the breadcrumb unmodified in `sanitize` + monitor modes. `sanitize` now
+    counts as an enforcing mode, so uninspectable requests fail closed under it.
+  - `agent_decoy_detection` (warn, booleans only) is also emitted for an unsupported
+    envelope or a mismatched-length body within 64 KiB, from a raw-byte match (#55).
+  - Undeclared-length admission is limited to requests without `Transfer-Encoding`;
+    a client-chunked upload and any undeclared-length response are classified in the
+    header phase and never buffered (#56).
+  - Uninspectable responses log `response_inspection_skipped`, at warn in Honeytoken
+    block mode; block-mode redaction does not apply to streamed responses (#56).
+  - Event names and levels match the docs: `inspection_skipped` (warn),
+    `seed_skipped_no_capacity` (info); the bare 415/413/400 rejections are
+    documented (#57).
+  - Standard PDK Makefile: `make build` builds only this policy; the repo-wide gate
+    moved to `make runtime-gate`. Adds a `playground/` for `make run` (#53).
+
 - Add `CITATION.cff` and a README citation section for the deposited preprint
   (concept DOI `10.5281/zenodo.22859851`, current version v1.1
   `10.5281/zenodo.22860118`), and
