@@ -19,8 +19,7 @@ Read first, in order:
 ## The #48 fix already landed in source
 
 A runtime change was made **here** on branch `fix/coordinator-48-inter-policy-framing`
-(will merge to `main` before you start — fetch `origin/main` and confirm it is
-present): the Coordinator now inspects a JSON body whose `Content-Length` is
+(merged as `c31500c`; fetch `origin/main` and confirm it is present): the Coordinator now inspects a JSON body whose `Content-Length` is
 **absent** (bounded against the 64 KiB ceiling) instead of rejecting it 415, because
 Tool Mapping drops `Content-Length` after rewriting the body. SSE, compressed, and
 present-but-oversized/malformed lengths still fail closed. Local Mode covers this
