@@ -1,0 +1,27 @@
+# Copyright 2026 Salesforce, Inc. All rights reserved.
+# Modifications Copyright (c) 2026 msaleme. Licensed under the MIT License.
+---
+apiVersion: gateway.mulesoft.com/v1alpha1
+kind: ApiInstance
+metadata:
+  name: ingress-http
+spec:
+  address: http://0.0.0.0:8081
+  services:
+    upstream:
+      address: http://backend
+      routes:
+        - config:
+            destinationPath: /anything/echo/
+  policies:
+    - policyRef:
+        name: decoy-coordinator-v0-1-impl # This value will be overriden during 'make run' execution
+      config:
+        honeytokens: [SK-DECOY-4417]
+        decoyTools: [export_all_customers_debug]
+        breadcrumb: do-not-call-internal-admin
+        honeytokenMode: monitor
+        sentinelMode: monitor
+        breadcrumbMode: observe
+        seeding: disabled
+        caseSensitive: false

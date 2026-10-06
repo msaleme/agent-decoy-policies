@@ -53,10 +53,8 @@ async fn exercise(breadcrumb: &str) -> anyhow::Result<()> {
     let response = r#"{ "jsonrpc": "2.0", "id": 1, "result": { "tools": [ { "name": "safe", "description": "secret description with room" } ] } }"#;
     let upstream = server
         .mock_async(|when, then| {
-            let when = when.body_contains("\"method\":\"tools/list\"");
-            if breadcrumb == "lure" {
-                when.body_contains("\"note\":\"\"");
-            }
+            when.body_contains("\"method\":\"tools/list\"")
+                .body_contains("\"note\":\"safe\"");
             then.status(200)
                 .header("content-type", "application/json")
                 .body(response);
@@ -75,6 +73,8 @@ async fn exercise(breadcrumb: &str) -> anyhow::Result<()> {
         json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"admin"}}),
         json!({"jsonrpc":"2.0","id":"secret","method":"ping"}),
         json!({"jsonrpc":"2.0","id":1,"method":"ping","params":{"note":"secret"}}),
+        // `sanitize` blocks a request breadcrumb rather than rewriting it (#54).
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"note":breadcrumb}}),
     ] {
         let reply = client
             .post(&url)
@@ -87,7 +87,8 @@ async fn exercise(breadcrumb: &str) -> anyhow::Result<()> {
         assert!(!reply.text().await?.contains("secret"));
     }
     upstream.assert_hits_async(0).await;
-    let body=json!({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"note":if breadcrumb=="lure" { "lure" } else { "safe" }}}).to_string();
+    let body =
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"note":"safe"}}).to_string();
     let reply = client
         .post(&url)
         .header("content-type", "application/json")

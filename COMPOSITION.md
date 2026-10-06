@@ -41,9 +41,10 @@ preserved or removed correctly.
 The opt-in [Decoy Coordinator](decoy-coordinator/README.md) implements these
 ordering and final-scan decisions inside one extension for bounded, unencoded,
 single-envelope JSON-RPC traffic. Its native tests and Local Mode Flex suites
-cover original-body decisions, sanitization, final seeding containment and forged
-headers. Its admission rules and non-expanding optional seeding are stricter than
-the standalone filters; see its configuration contract before migration.
+cover original-body decisions, final seeding containment and forged headers. Its
+admission rules and non-expanding optional seeding are stricter than the standalone
+filters, and it never rewrites a request: its Breadcrumb `sanitize` blocks exactly
+like `block`. See its configuration contract before migration.
 
 The three original independent filters still do not share original-body state or
 a final-chain callback. Arbitrary ordering of those filters is not equivalent to

@@ -16,7 +16,6 @@ pub struct RequestPlan {
     pub sentinel_hit: bool,
     pub honey_hit: bool,
     pub breadcrumb_hit: bool,
-    pub body: Vec<u8>,
     pub list_id: Option<Value>,
 }
 
@@ -122,11 +121,10 @@ fn remove(text: &str, needle: &str, fold: bool) -> String {
     out
 }
 
-// Neutralize a lure only in inert string VALUES. Object keys are structural
-// identifiers: they are preserved byte-for-byte, and a marker embedded in a key
-// fails closed (None) because deleting key bytes would rename a field and change
-// message semantics rather than remove a decoy — e.g. `{"decoy_role":"admin"}`
-// must never become `{"role":"admin"}` (#39).
+// Response Honeytoken redaction: remove protected values from string VALUES only.
+// Object keys are structural identifiers: they are preserved byte-for-byte, and a
+// match embedded in a key fails closed (None) so the caller withholds instead of
+// renaming a field (#39). Requests are never rewritten (#54).
 fn rewrite(value: &Value, needles: &[String], fold: bool) -> Option<Value> {
     let hit = |s: &str| {
         needles.iter().any(|n| {
@@ -200,8 +198,13 @@ impl Engine {
     pub fn response_enforced(&self) -> bool {
         self.0.honeytoken_mode == "block" && !self.0.honeytokens.is_empty()
     }
+    // `sanitize` is accepted for configuration compatibility but enforces exactly
+    // like `block` on requests: stripping a marker from any request field could
+    // change which tool, resource, prompt or argument an earlier policy approved,
+    // so no (method, field) pair is provably inert to rewrite (#54).
     pub fn breadcrumb_enforced(&self) -> bool {
-        self.0.breadcrumb_mode == "block" && !self.0.breadcrumb.is_empty()
+        ["block", "sanitize"].contains(&self.0.breadcrumb_mode.as_str())
+            && !self.0.breadcrumb.is_empty()
     }
     // Any active block mode makes the policy an enforcing filter: uninspectable
     // traffic then fails closed rather than passing through (#38).
@@ -300,54 +303,37 @@ impl Engine {
                 .as_str()
                 .is_some_and(|name| self.0.decoy_tools.iter().any(|n| n == name))
     }
+    // Best-effort detection over raw bytes for a body that is not a supported
+    // envelope (batch, duplicate members, non-JSON-RPC), so the detection log is
+    // still emitted on that path (#55). A JSON-escaped marker is not decoded here;
+    // Sentinel needs a parsed tools/call and is never reported from raw bytes.
+    pub fn raw_hits(&self, body: &[u8]) -> (bool, bool) {
+        let text = String::from_utf8_lossy(body);
+        let folded = text.to_ascii_lowercase();
+        let honey = self.0.honeytokens.iter().any(|n| {
+            if self.0.case_sensitive {
+                text.contains(n.as_str())
+            } else {
+                folded.contains(&n.to_ascii_lowercase())
+            }
+        });
+        let breadcrumb = !self.0.breadcrumb.is_empty() && text.contains(&self.0.breadcrumb);
+        (honey, breadcrumb)
+    }
     pub fn request(&self, body: &[u8]) -> Result<RequestPlan, &'static str> {
         let original = parse(body).filter(envelope).ok_or("unsupported-jsonrpc")?;
-        // All initial decisions use the same immutable original representation.
+        // All decisions use the same immutable original representation. Requests
+        // are never rewritten: no MCP request field is provably inert, so a
+        // breadcrumb in `sanitize` mode blocks exactly like `block` (#54, #55).
         let honey = self.honey(body, &original);
-        let mut sentinel_hit = self.sentinel(&original);
+        let sentinel_hit = self.sentinel(&original);
         let breadcrumb =
             !self.0.breadcrumb.is_empty() && contains(&original, &self.0.breadcrumb, false);
-        let mut blocked = (honey && self.response_enforced())
+        let blocked = (honey && self.response_enforced())
             || (sentinel_hit && self.0.sentinel_mode == "block")
-            || (breadcrumb && self.0.breadcrumb_mode == "block");
-        let mut output = body.to_vec();
-        let original_id = original.get("id").cloned();
-        let original_method = original.get("method").cloned();
-        let mut final_value = original;
-        if !blocked && breadcrumb && self.0.breadcrumb_mode == "sanitize" {
-            // Arguments to tools/call are semantically load-bearing: stripping a
-            // marker there could synthesize or alter a privileged argument, so we
-            // fail closed instead of rewriting them (#39). Sanitization is limited
-            // to inert string values outside tool-call parameters.
-            if final_value.get("method").and_then(Value::as_str) == Some("tools/call")
-                && final_value
-                    .get("params")
-                    .is_some_and(|p| contains(p, &self.0.breadcrumb, false))
-            {
-                return Err("unsafe-sanitization-argument");
-            }
-            final_value = rewrite(
-                &final_value,
-                std::slice::from_ref(&self.0.breadcrumb),
-                false,
-            )
-            .ok_or("unsafe-sanitization-key")?;
-            output = serde_json::to_vec(&final_value).map_err(|_| "serialization")?;
-            if output.len() > body.len()
-                || final_value.get("id").cloned() != original_id
-                || final_value.get("method").cloned() != original_method
-                || !envelope(&final_value)
-                || contains(&final_value, &self.0.breadcrumb, false)
-            {
-                return Err("unsafe-sanitization");
-            }
-            // Mutation must not introduce a new terminal decision either.
-            sentinel_hit |= self.sentinel(&final_value);
-            blocked = (self.response_enforced() && self.honey(&output, &final_value))
-                || (sentinel_hit && self.0.sentinel_mode == "block");
-        }
-        let list_id = if !blocked && final_value["method"] == "tools/list" {
-            final_value
+            || (breadcrumb && self.breadcrumb_enforced());
+        let list_id = if !blocked && original["method"] == "tools/list" {
+            original
                 .get("id")
                 .filter(|id| id.is_string() || id.is_number())
                 .cloned()
@@ -359,7 +345,6 @@ impl Engine {
             sentinel_hit,
             honey_hit: honey,
             breadcrumb_hit: breadcrumb,
-            body: output,
             list_id,
         })
     }
