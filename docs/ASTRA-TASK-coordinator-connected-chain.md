@@ -19,14 +19,24 @@ Read first, in order:
 ## The #48 fix already landed in source
 
 A runtime change was made **here** on branch `fix/coordinator-48-inter-policy-framing`
-(will merge to `main` before you start — fetch `origin/main` and confirm it is
-present): the Coordinator now inspects a JSON body whose `Content-Length` is
+(merged as `c31500c`; fetch `origin/main` and confirm it is present): the Coordinator now inspects a JSON body whose `Content-Length` is
 **absent** (bounded against the 64 KiB ceiling) instead of rejecting it 415, because
 Tool Mapping drops `Content-Length` after rewriting the body. SSE, compressed, and
 present-but-oversized/malformed lengths still fail closed. Local Mode covers this
 (`a_json_body_with_a_dropped_content_length_is_still_inspected`,
 `an_undeclared_body_over_the_limit_still_fails_closed`). Your job is the interop
 evidence Local Mode cannot produce.
+
+**Narrowed by #56 (PR #58, `1e92d42`).** Undeclared-length admission now applies
+only to a request with **no `Transfer-Encoding` header**, and responses must declare
+`Content-Length` (an undeclared-length response is forwarded unredacted with
+`response_inspection_skipped`). Breadcrumb `sanitize` now blocks like `block` on
+requests (#54). Two runtime facts only a real gateway can settle, so capture both:
+(a) whether the wasm filter sees the client's `transfer-encoding` on a chunked
+upload at all, and (b) whether Tool Mapping's rewritten request carries
+`Transfer-Encoding: chunked`. If (b), Case 7 will 415 again in enforcing mode
+(fail-closed, but a #48 regression) — file it with the captured framing; do not
+loosen admission to pass.
 
 ## What to do
 
@@ -44,7 +54,9 @@ evidence Local Mode cannot produce.
    backend NOT reached**, with the decoy configured on the **mapped** name; keep the
    un-mapped original-name control. If it still 415s, the root cause is something
    other than a dropped length — file a new issue with the captured framing rather
-   than adjusting the matrix to pass.
+   than adjusting the matrix to pass. Also send one direct client-chunked JSON
+   `tools/call` (no Tool Mapping) and record whether it 415s in enforcing mode and
+   logs a warn `inspection_skipped` in observe mode (#56).
 4. **#49 — corrected cases.** (a) Add a case that forces a **backend** `tools/list`
    (discovery not asset-served) so the Coordinator response leg is actually
    exercised, separate from the cached-discovery 200. (b) State the event-stream case
