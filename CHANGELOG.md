@@ -10,7 +10,7 @@
     forwarded the breadcrumb unmodified in `sanitize` + monitor modes. `sanitize` now
     counts as an enforcing mode, so uninspectable requests fail closed under it.
   - `agent_decoy_detection` (warn, booleans only) is also emitted for an unsupported
-    envelope, from a raw-byte match (#55).
+    envelope or a mismatched-length body within 64 KiB, from a raw-byte match (#55).
   - Undeclared-length admission is limited to requests without `Transfer-Encoding`;
     a client-chunked upload and any undeclared-length response are classified in the
     header phase and never buffered (#56).

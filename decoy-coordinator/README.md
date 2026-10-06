@@ -26,10 +26,16 @@ must match the body exactly.
   a policy placed after this one in the chain dropped.
 
 `text/event-stream` and other streamed bodies (excluded by the media type),
-compressed content, non-JSON, a present-but-oversized/malformed declared length,
-batches and duplicate members are **uninspectable or unsupported**. Uninspectable
-bodies are classified in the header phase and never buffered (so a slow or
-long-lived stream cannot stall the filter).
+compressed content, non-JSON and a present-but-oversized/malformed declared length
+are **uninspectable**: they are classified in the header phase and never buffered
+(so a slow or long-lived stream cannot stall the filter). Batches and duplicate
+members are **unsupported**: they are buffered within the bounds above, parsed,
+rejected or skipped by mode, and still raw-scanned for detection telemetry.
+
+**Response redaction needs a declared length.** Chunked `application/json`
+responses, which many upstreams (streaming frameworks, HTTP/2 backends) send by
+default, are forwarded unredacted with the event below; confirm your upstream
+sets `Content-Length` before relying on Honeytoken response redaction.
 
 **Streamed responses are not redacted, even in `honeytokenMode: block`.** An
 uninspectable response (MCP Streamable HTTP servers commonly answer `POST` with
@@ -79,7 +85,7 @@ SSE.
 
   | `event` | Level | When |
   |---|---|---|
-  | `agent_decoy_detection` | warn | A detector matched on a request, including an unsupported envelope (raw-byte match; Sentinel needs a parsed `tools/call`). Fields: `stage`, `honeytoken`, `breadcrumb`, `sentinel` — booleans only, never lure values |
+  | `agent_decoy_detection` | warn | A detector matched on a request, including an unsupported envelope or a mismatched-length body within 64 KiB (raw-byte match; Sentinel needs a parsed `tools/call`). Fields: `stage`, `honeytoken`, `breadcrumb`, `sentinel` — booleans only, never lure values |
   | `inspection_skipped` | warn | Monitor/observe forwarded a request it could not inspect. Fields: `stage`, `reason` (`uninspectable-body`, `invalid-framing`, `unsupported-jsonrpc`) |
   | `response_inspection_skipped` | warn in Honeytoken block mode, info otherwise | A response was forwarded uninspected (streamed, undeclared length, compressed, non-JSON). Fields: `stage`, `reason` |
   | `seed_skipped_no_capacity` | info | Seeding applied but the marker did not fit without growing the body |

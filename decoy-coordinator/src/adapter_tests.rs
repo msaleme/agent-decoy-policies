@@ -106,6 +106,7 @@ fn unsupported_envelope_still_emits_detection_telemetry() {
     assert!(trace.next().is_some());
     assert!(logged(&test, "Warn", r#""event":"agent_decoy_detection""#));
     assert!(logged(&test, "Warn", r#""event":"inspection_skipped""#));
+    assert!(!test.logs().iter().any(|l| l.contains("lure")));
 }
 #[test]
 fn a_client_chunked_json_upload_is_classified_in_the_header_phase() {
@@ -162,6 +163,120 @@ fn an_undeclared_length_response_is_not_buffered_and_warns_in_block_mode() {
         &test,
         "Warn",
         r#""event":"response_inspection_skipped""#
+    ));
+}
+#[test]
+fn a_small_chunked_upload_is_rejected_by_headers_not_size() {
+    // Unlike the over-limit case above, this body would pass every size check, so
+    // a 415 proves the classification is made from the headers alone (#56).
+    let body = r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#;
+    let trace = Rc::new(TraceBackend::new(backend));
+    let mut test = UnitTestBuilder::default()
+        .with_config(config())
+        .with_backend(Rc::clone(&trace))
+        .with_entrypoint(super::configure);
+    let response = test.request(
+        UnitHttpRequest::post()
+            .with_header("content-type", "application/json")
+            .with_header("transfer-encoding", "chunked")
+            .with_body(body),
+    );
+    assert_eq!(response.status_code(), 415);
+    assert!(trace.next().is_none());
+}
+#[test]
+fn a_response_skip_is_info_level_outside_honeytoken_block_mode() {
+    let sse = "event: message\ndata: {}\n\n";
+    let mut test = UnitTestBuilder::default()
+        .with_config(monitor_config("observe"))
+        .with_backend(move |_: UnitHttpRequest| {
+            UnitHttpResponse::new(200)
+                .with_header("content-type", "text/event-stream")
+                .with_header("content-length", sse.len().to_string())
+                .with_body(sse.as_bytes())
+        })
+        .with_entrypoint(super::configure);
+    let response = test.request(request(r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#));
+    assert_eq!(response.status_code(), 200);
+    assert!(logged(
+        &test,
+        "Info",
+        r#""event":"response_inspection_skipped""#
+    ));
+    assert!(!logged(&test, "Warn", "response_inspection_skipped"));
+}
+#[test]
+fn sanitize_alone_makes_the_policy_fail_closed_on_uninspectable_requests() {
+    // Every other detector is in monitor mode; Breadcrumb `sanitize` is enforcing (#54).
+    let trace = Rc::new(TraceBackend::new(backend));
+    let mut test = UnitTestBuilder::default()
+        .with_config(monitor_config("sanitize"))
+        .with_backend(Rc::clone(&trace))
+        .with_entrypoint(super::configure);
+    let response = test.request(
+        UnitHttpRequest::post()
+            .with_header("content-type", "text/event-stream")
+            .with_header("content-length", "2")
+            .with_body("{}"),
+    );
+    assert_eq!(response.status_code(), 415);
+    assert!(trace.next().is_none());
+}
+#[test]
+fn an_enforcing_rejection_of_an_unsupported_envelope_still_logs_the_detection() {
+    let trace = Rc::new(TraceBackend::new(backend));
+    let mut test = UnitTestBuilder::default()
+        .with_config(config())
+        .with_backend(Rc::clone(&trace))
+        .with_entrypoint(super::configure);
+    let response = test.request(request(
+        r#"[{"jsonrpc":"2.0","id":1,"method":"ping","params":{"note":"lure"}}]"#,
+    ));
+    assert_eq!(response.status_code(), 400);
+    assert!(trace.next().is_none());
+    assert!(logged(&test, "Warn", r#""event":"agent_decoy_detection""#));
+    assert!(logged(&test, "Warn", r#""breadcrumb":true"#));
+    assert!(!test.logs().iter().any(|l| l.contains("lure")));
+}
+#[test]
+fn a_mismatched_length_body_in_monitor_mode_still_logs_the_detection() {
+    let body = r#"{"jsonrpc":"2.0","id":1,"method":"ping","params":{"note":"lure"}}"#;
+    let trace = Rc::new(TraceBackend::new(backend));
+    let mut test = UnitTestBuilder::default()
+        .with_config(monitor_config("observe"))
+        .with_backend(Rc::clone(&trace))
+        .with_entrypoint(super::configure);
+    let response = test.request(
+        UnitHttpRequest::post()
+            .with_header("content-type", "application/json")
+            .with_header("content-length", (body.len() + 1).to_string())
+            .with_body(body),
+    );
+    assert_eq!(response.status_code(), 200);
+    assert!(trace.next().is_some());
+    assert!(logged(&test, "Warn", r#""event":"agent_decoy_detection""#));
+    assert!(logged(&test, "Warn", r#""reason":"invalid-framing""#));
+    assert!(!test.logs().iter().any(|l| l.contains("lure")));
+}
+#[test]
+fn seeding_without_room_logs_an_info_level_skip() {
+    let list = r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"t","description":"d"}]}}"#;
+    let mut test = UnitTestBuilder::default()
+        .with_config(config())
+        .with_backend(move |_: UnitHttpRequest| {
+            UnitHttpResponse::new(200)
+                .with_header("content-type", "application/json")
+                .with_header("content-length", list.len().to_string())
+                .with_body(list)
+        })
+        .with_entrypoint(super::configure);
+    let response = test.request(request(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#));
+    assert_eq!(response.status_code(), 200);
+    assert_eq!(response.body(), list.as_bytes());
+    assert!(logged(
+        &test,
+        "Info",
+        r#""event":"seed_skipped_no_capacity""#
     ));
 }
 #[test]

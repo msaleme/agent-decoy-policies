@@ -162,6 +162,12 @@ async fn request_filter(
     // A declared length must match exactly; an undeclared body is only bounded.
     let framing_ok = expected.is_none_or(|n| original.len() == n) && original.len() <= LIMIT;
     if !framing_ok {
+        // A within-limit body with a mismatched length is already buffered, so
+        // still report raw-byte detections before skipping or rejecting it (#55).
+        if original.len() <= LIMIT {
+            let (honey, breadcrumb) = engine.raw_hits(&original);
+            detection("request", honey, breadcrumb, false);
+        }
         if engine.enforcing() {
             alert("request", "inspect", "blocked", "invalid-framing");
             return Flow::Break(Response::new(413));
@@ -225,7 +231,9 @@ async fn response_filter(
         headers.handler().header("content-encoding"),
         false,
     ) {
-        Admit::Uninspectable => {
+        Admit::Declared(n) => n,
+        // With `allow_undeclared` false the only other outcome is Uninspectable.
+        Admit::Uninspectable | Admit::Undeclared => {
             skipped(
                 "response_inspection_skipped",
                 "response",
@@ -234,8 +242,6 @@ async fn response_filter(
             );
             return;
         }
-        Admit::Declared(n) => Some(n),
-        Admit::Undeclared => None,
     };
     let state = headers.into_headers_body_state().await;
     let handler = state.handler();
@@ -252,7 +258,7 @@ async fn response_filter(
             "honeytoken-match",
         );
     }
-    let bounded = expected.is_none_or(|n| original.len() == n) && original.len() <= LIMIT;
+    let bounded = original.len() == expected && original.len() <= LIMIT;
     let output = if bounded {
         engine.response(&original, id.as_ref())
     } else if engine.response_enforced() {

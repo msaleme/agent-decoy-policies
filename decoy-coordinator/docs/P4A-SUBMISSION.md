@@ -26,10 +26,12 @@ instead of racing as independent filters.
   must match the body exactly. On **requests** an absent length is still inspected
   and bounded against 64 KiB when the client sent no `Transfer-Encoding` — an
   earlier policy such as Tool Mapping drops it after a rewrite; a client-chunked
-  upload is uninspectable. **Responses** must declare their length. It is **not** a
-  generic MCP Streamable HTTP policy: `text/event-stream` and other streamed,
-  chunked, compressed, non-JSON or present-but-oversized bodies are uninspectable
-  and are never buffered.
+  upload is uninspectable. A request with neither header (e.g. an HTTP/2 client
+  streaming without a length) is buffered up to the gateway's downstream buffer
+  limit before the 64 KiB bound applies — configure those limits. **Responses**
+  must declare their length. It is **not** a generic MCP Streamable HTTP policy:
+  `text/event-stream` and other streamed, chunked, compressed, non-JSON or
+  present-but-oversized bodies are uninspectable and are never buffered.
 - **Detection on the original body:** all three detectors evaluate the original
   body; a required block wins. Requests are never rewritten.
 - **Telemetry:** the policy emits **structured gateway log events** for a
@@ -109,8 +111,10 @@ caseSensitive: false
 single-envelope JSON-RPC. Uninspectable bodies are never buffered (no stall).
 **Block-mode Honeytoken redaction does not apply to streamed or undeclared-length
 responses:** they are forwarded unmodified with a warning-level
-`response_inspection_skipped` event. Pair with MCP Support / Global Access / ABAC
-for SSE processing.
+`response_inspection_skipped` event. That includes chunked `application/json`
+responses, which many upstreams (streaming frameworks, HTTP/2 backends) send by
+default — confirm your upstream sets `Content-Length` before relying on response
+redaction. Pair with MCP Support / Global Access / ABAC for SSE processing.
 
 **Is `seeding: enabled` guaranteed to plant the breadcrumb?** No — seeding is
 best-effort. Every edit is non-expanding, so on a compact `tools/list` response
