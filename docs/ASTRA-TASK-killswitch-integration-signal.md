@@ -22,8 +22,9 @@ Read first, in order:
 1. `docs/CODEX-HANDOFF.md` — working-state / branch / authorization conventions, and
    the load-bearing rule **"Never use headers as trusted provenance or cross-policy
    control state."** That rule governs this entire design (see Boundaries).
-2. `decoy-coordinator/src/lib.rs` — the current emission surface: the `event(...)`
-   structured logs (`agent_decoy_detection`, `agent_decoy_composition`), the PDK
+2. `decoy-coordinator/src/lib.rs` — the current emission surface: the `detection(...)`
+   (`agent_decoy_detection`, warn, booleans only) and `event`/`alert`
+   (`agent_decoy_composition`) structured logs (#58), the PDK
    `violations.generate_policy_violation()`, and `deny(...)`.
 3. `decoy-coordinator/src/adapter_tests.rs` — specifically
    `forged_headers_cannot_suppress_response_redaction`: the `x-agent-decoy-tripwire` /
