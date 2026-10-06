@@ -4,7 +4,7 @@ metadata:
   labels:
     title: Decoy Coordinator
     category: Security
-    description: Coordinates original-body detections, required sanitization and final
+    description: Coordinates original-body detections, required blocks and final
       response rescanning for bounded JSON-RPC exchanges.
     metadata/capabilities/injectionPoint: inbound
     metadata/interfaceScope: api,resource

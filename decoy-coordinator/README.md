@@ -11,37 +11,61 @@ This policy inspects **bounded, unencoded, finite single-envelope JSON-RPC 2.0**
 only. It is deliberately not a generic MCP Streamable HTTP policy. Inspectable
 traffic is an unencoded JSON media type carrying one unambiguous JSON-RPC envelope
 whose buffered body is at most 64 KiB. A decimal `Content-Length`, when present,
-must match the body exactly; if it is **absent** the body is still inspected and
-bounded against the 64 KiB ceiling — a trusted upstream MCP policy (e.g. Tool
-Mapping) or this policy's own sanitization drops `Content-Length` after rewriting
-the body, so a missing length is not by itself uninspectable. `text/event-stream`
-and other streamed bodies (excluded by the media type), compressed content,
-non-JSON, a present-but-oversized/malformed declared length, batches and duplicate
-members are **uninspectable or unsupported**, and are never buffered (so a
-long-lived stream cannot stall the filter). If your deployment relies on SSE MCP
-tool results, redaction/seeding on that leg does not apply — pair this policy with
-MuleSoft MCP Support / Global Access / ABAC, which do process MCP SSE.
+must match the body exactly.
+
+- **Requests:** if `Content-Length` is **absent** and the client sent no
+  `Transfer-Encoding`, the body is still inspected and bounded against the 64 KiB
+  ceiling — a trusted earlier MCP policy (e.g. Tool Mapping) drops `Content-Length`
+  after rewriting the body, so that missing length is not by itself uninspectable.
+  A client-chunked upload (`Transfer-Encoding` present) is uninspectable. A request
+  with neither header (for example an HTTP/2 client streaming without a length) is
+  buffered up to the gateway's downstream buffer limit and timeout before the
+  64 KiB bound applies; configure those limits before deployment.
+- **Responses:** must declare a valid `Content-Length` within 64 KiB. A chunked or
+  otherwise undeclared-length response is uninspectable, including one whose length
+  a policy placed after this one in the chain dropped.
+
+`text/event-stream` and other streamed bodies (excluded by the media type),
+compressed content, non-JSON, a present-but-oversized/malformed declared length,
+batches and duplicate members are **uninspectable or unsupported**. Uninspectable
+bodies are classified in the header phase and never buffered (so a slow or
+long-lived stream cannot stall the filter).
+
+**Streamed responses are not redacted, even in `honeytokenMode: block`.** An
+uninspectable response (MCP Streamable HTTP servers commonly answer `POST` with
+`text/event-stream`) is forwarded unmodified, and the policy logs a
+**warning-level** `response_inspection_skipped` event in Honeytoken block mode
+(info level otherwise). If your deployment relies on SSE MCP tool results, pair
+this policy with MuleSoft MCP Support / Global Access / ABAC, which do process MCP
+SSE.
 
 ## Contract
 
-- Admission is mode-aware. In an **enforcing** mode (any block mode with matching
-  detectors) uninspectable or unsupported traffic **fails closed** (415/413/400).
-  In **monitor/observe** it passes through **unmodified** with an
-  `inspection_skipped` event, so unrelated valid traffic is never blocked.
-- Honeytoken, Sentinel and Breadcrumb decisions inspect the original body before
-  any mutation. Required block decisions win. Sentinel hits emit a PDK violation;
-  Honeytoken-only and Breadcrumb-only hits do **not** emit a PDK violation.
-- Breadcrumb sanitization removes the marker only from inert JSON **string values**.
-  Object **keys are preserved byte-for-byte** — a marker in a key fails closed
-  rather than renaming a field (e.g. `decoy_role` never becomes `role`). A marker
-  inside `tools/call` `params` fails closed rather than synthesizing an argument.
-  Sanitization also preserves RPC `id`/`method`, leaves a valid envelope, and all
-  enforcing detectors are re-checked afterward.
+- Admission is mode-aware. In an **enforcing** mode (any block mode, or Breadcrumb
+  `sanitize`, with configured detectors) uninspectable or unsupported request
+  traffic **fails closed** with a bare HTTP status: **415** uninspectable body,
+  **413** invalid framing (length mismatch or over 64 KiB), **400** unsupported
+  envelope (batch, duplicate members, non-JSON-RPC). These are deliberately not
+  in-band JSON-RPC errors: until a body is proven to be one well-formed request
+  there is no unambiguous `id` to reflect. In **monitor/observe** such traffic
+  passes through **unmodified** with a warning-level `inspection_skipped` event,
+  so unrelated valid traffic is never blocked but the blind spot is visible.
+- Honeytoken, Sentinel and Breadcrumb decisions inspect the original body. Required
+  block decisions win. Sentinel hits emit a PDK violation; Honeytoken-only and
+  Breadcrumb-only hits do **not** emit a PDK violation.
+- **Requests are never rewritten.** Breadcrumb `sanitize` is accepted for
+  configuration compatibility but, on requests, **blocks exactly like `block`**
+  (in-band -32008 for a request with an `id`). Removing a marker from any request
+  field could change which tool, resource (`resources/read` `uri`), prompt
+  (`prompts/get` `arguments`) or argument an earlier schema, authorization or ABAC
+  policy already approved, and no `(method, field)` pair — including unknown future
+  methods — is provably inert to rewrite, so the allow-list of rewritable request
+  fields is empty.
 - Response Honeytoken removal runs before optional tools/list seeding. Seeding
   requires an ID captured from the admitted request and a matching valid response.
   A final scan withholds output if seeding creates a protected value.
-- Every edit is non-expanding, so **seeding is best-effort**: it is skipped (with a
-  `seed_skipped_no_capacity` event) when the marker cannot fit without growing the
+- Every edit is non-expanding, so **seeding is best-effort**: it is skipped (with an
+  info-level `seed_skipped_no_capacity` event) when the marker cannot fit without growing the
   body — a normal compact `tools/list` response has no spare room. For guaranteed
   breadcrumbs, plant them in the backend or an asset-approved tool description and
   leave `seeding: disabled`.
@@ -51,11 +75,17 @@ MuleSoft MCP Support / Global Access / ABAC, which do process MCP SSE.
   and even when the marker is JSON-escaped in the serialized `id` — an empty HTTP
   403 is returned instead of an in-band error. Otherwise blocked requests with IDs
   get HTTP 200 / JSON-RPC -32008; notifications get empty HTTP 202.
-- Structured events record stage, requested action, applied action and reason.
-  Detector events expose booleans, never configured Honeytoken values. **Warning
-  level is reserved for detections and enforcement actions/failures; clean
-  pass-through is logged at debug** to avoid warning-log noise. Monitor mode
-  records detections without requiring redaction.
+- Structured gateway log events (JSON, one per line):
+
+  | `event` | Level | When |
+  |---|---|---|
+  | `agent_decoy_detection` | warn | A detector matched on a request, including an unsupported envelope (raw-byte match; Sentinel needs a parsed `tools/call`). Fields: `stage`, `honeytoken`, `breadcrumb`, `sentinel` — booleans only, never lure values |
+  | `inspection_skipped` | warn | Monitor/observe forwarded a request it could not inspect. Fields: `stage`, `reason` (`uninspectable-body`, `invalid-framing`, `unsupported-jsonrpc`) |
+  | `response_inspection_skipped` | warn in Honeytoken block mode, info otherwise | A response was forwarded uninspected (streamed, undeclared length, compressed, non-JSON). Fields: `stage`, `reason` |
+  | `seed_skipped_no_capacity` | info | Seeding applied but the marker did not fit without growing the body |
+  | `agent_decoy_composition` | warn for detections and enforcement actions/failures; debug for clean pass-through and no-ops | Coordinated verdict. Fields: `stage`, `requested`, `applied`, `reason` |
+
+  Monitor mode records detections without requiring redaction.
 
 ## Configuration bounds
 
@@ -88,8 +118,8 @@ are on, keep `seeding: disabled`.
 
 **Policy ordering.** On the request path this policy should run **after** schema
 validation, authentication, ABAC/Global Access and any integrity/signature
-verification, so its (values-only) sanitization never mutates a body those policies
-already trusted. On the response path the chain runs in reverse; verify the exact
+verification. This policy never rewrites a request body, so it cannot invalidate a
+body those policies already trusted. On the response path the chain runs in reverse; verify the exact
 request order and resulting reverse response order in Managed or Connected Mode
 (Local Mode cannot exercise the included MCP policies). The exact chain, request
 matrix and per-detector assertions are in
@@ -103,7 +133,7 @@ decoyTools: [admin_override_do_not_use]
 breadcrumb: internal_lure_do_not_follow
 honeytokenMode: block       # block or monitor
 sentinelMode: block         # block or monitor
-breadcrumbMode: sanitize   # observe, sanitize, block
+breadcrumbMode: block      # observe or block (sanitize = block on requests)
 seeding: disabled          # disabled or enabled
 caseSensitive: false       # ASCII case folding for Honeytokens only
 ```
@@ -113,9 +143,10 @@ matching and seeding. Blank list entries and unknown modes are rejected.
 
 ## Runtime boundary
 
-Configure and validate gateway buffer/timeout controls before deployment. As with
-standalone Honeytoken, an uninspectable enforcing response must be buffered to
-withhold it through PDK 1.10. Successful write and empty-body fallback paths are
+Configure and validate gateway buffer/timeout controls before deployment. Unlike
+standalone Honeytoken, this policy does not buffer an uninspectable response to
+withhold it; it forwards it with the `response_inspection_skipped` event described
+above. For an inspectable response, successful write and empty-body fallback paths are
 covered locally. If **both** response writes fail, this policy can report failure
 but cannot independently terminate downstream output. The
 [PDK termination gap](../mcp-honeytoken-tripwire/docs/pdk-response-termination-gap.md)
@@ -135,8 +166,17 @@ cargo +1.89.0 test --lib --locked --offline
 cargo +1.89.0 clippy --all-targets --locked --offline -- -D warnings
 ```
 
-From the repository root, `python3 scripts/flex_runtime_gate.py --prepare
---assets-only` builds and checks all four policies without credentials. To run
+The Makefile is the standard PDK policy Makefile (`setup`, `build-asset-files`,
+`build`, `run`, `test`, `publish`, `release`, `show-policy-ref-name`). `make build`
+builds only this policy: `target/wasm32-wasip1/release/decoy_coordinator.wasm` plus
+its generated definition and implementation YAML (`decoy-coordinator-v0-1-impl`).
+`make build`/`publish` need `group_id` in `Cargo.toml` set to your Anypoint
+organization ID; the committed placeholder is rejected.
+
+`make runtime-gate` (or `python3 scripts/flex_runtime_gate.py --prepare
+--assets-only` from the repository root) builds and checks the local Flex runtime
+bundles for all four policies without credentials; it is a test gate, not on the
+publish path. To run
 `cargo +1.89.0 test --test requests --locked --offline -- --test-threads=1`, first
 provision an authorized disposable registration in this policy's own ignored
 `tests/config` directory. Never reuse another policy's identity. Delete the remote

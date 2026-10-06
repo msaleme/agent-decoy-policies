@@ -44,8 +44,9 @@ Apply, in this **request** order (the response path runs in reverse):
 4. **MCP Global Access / ABAC** — the decoy tool must be inert, present in the
    approved asset, and allowed for the monitored principal, or Sentinel loses
    discoverability.
-5. **Decoy Coordinator** — after all of the above, so its values-only
-   sanitization never mutates a body those policies already trusted.
+5. **Decoy Coordinator** — after all of the above. It never rewrites a request
+   (`sanitize` blocks like `block`, #54), so it cannot invalidate a body those
+   policies already trusted.
 
 ## Test matrix
 
@@ -64,10 +65,10 @@ envelope, `content-type: application/json`, exact `content-length`.
 
 ## Assertions
 
-- **Ordering:** with Schema Validation before the Coordinator, a body the
-  Coordinator sanitizes (values-only) must not retroactively fail schema
-  validation — verify the reverse response order does not re-trigger a
-  validation error on an edited-but-valid envelope.
+- **Ordering:** with Schema Validation before the Coordinator, a response the
+  Coordinator redacts or seeds must not retroactively fail schema validation —
+  verify the reverse response order does not re-trigger a validation error on an
+  edited-but-valid envelope. (Requests are never edited.)
 - **Enforcement, not just registration:** after applying the chain via API, do a
   **UI Save & Apply** and confirm `deployment.updatedDate` bumped and status
   cycled Active→Updating→Active before asserting — API PATCH alone does not push
@@ -121,7 +122,12 @@ contract a re-run must satisfy. Do not present the original rows as passing.
   **absent** is now inspected and bounded against the 64 KiB ceiling instead of being
   rejected (see `a_json_body_with_a_dropped_content_length_is_still_inspected` and
   `an_undeclared_body_over_the_limit_still_fails_closed` in the Local Mode suite; SSE,
-  compressed, and present-but-oversized/malformed lengths still fail closed). A re-run
+  compressed, and present-but-oversized/malformed lengths still fail closed). #56
+  then narrowed that loosening to the request leg **without** `Transfer-Encoding`:
+  a client-chunked upload and every undeclared-length response stay uninspectable.
+  **If the instrumented re-run shows the mapped request carries
+  `Transfer-Encoding: chunked`, Case 7 will again return 415** and the #56 rule must
+  be revisited against a documented Flex buffer limit and timeout. A re-run
   must (a) **instrument** the actual content-type / content-length / transfer-encoding
   the mapped request carries to confirm the root cause, then (b) re-verify Case 7
   reaches `-32008` with the decoy configured on the **mapped** name.
