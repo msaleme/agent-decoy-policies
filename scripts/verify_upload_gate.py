@@ -183,7 +183,18 @@ def main():
                 if attempt == 49: raise
                 time.sleep(0.1)
         assert inspect_limits(name, 134217728) == 134217728
-        assert exchange(port, headers('/clean', 5)+b'clean') == (200, b'clean')
+        # Docker's port proxy accepts TCP before HAProxy listens inside the
+        # container, so a connect probe is not readiness: retry only a reset first
+        # request. A reset never reached the backend, and admissions() below still
+        # rejects any duplicate admission.
+        for attempt in range(50):
+            try:
+                clean = exchange(port, headers('/clean', 5)+b'clean')
+                break
+            except ConnectionResetError:
+                if attempt == 49: raise
+                time.sleep(0.1)
+        assert clean == (200, b'clean')
         if with_flex:
             token = b'outer-gate-decoy'
             assert exchange(port, headers('/blocked', len(token))+token)[0] == 403
