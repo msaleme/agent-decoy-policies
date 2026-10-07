@@ -1,5 +1,129 @@
 # Coordinator Connected Mode chain — live results, with failed expectations
 
+## 2026-10-07 UTC rerun: corrected cases and remaining failures
+
+This verification-only rerun used source `c68c12a0d38df9bbea5df377bacd8bef7846714e`,
+which includes `1e92d42` (#58) and `565407f` (#59). **The corrected contract did not
+fully pass.** The [new machine-readable record](evidence/coordinator-connected-chain-2026-10-07.json)
+keeps all 33 HTTP attempts, actual configurations, captured framing/body bytes,
+active-listener audits, Monitoring rows and deletion checks. Twenty-five records
+qualify as acceptance or isolation evidence; eight setup/stale-listener attempts
+are explicitly excluded. The earlier failed runs below and their JSON files are
+preserved.
+
+| Requirement | Observed result | Disposition |
+| --- | --- | --- |
+| #48, decoy configured on `mapped_inert_decoy` | 200 success; backend 1. The Coordinator actually receives `inert_decoy`. | Prescribed assertion fails; leave #48 open. |
+| #48, original-name controls | Transformed and untransformed calls both return 200 / `-32008`; backend 0. | Original 415 is resolved for the measured framing. |
+| #56, direct client-chunked upload | Coordinator boundary has neither framing header. Clean calls return 200/backend 1 in enforcing mode; observe emits no `inspection_skipped`. | New admission defect; also reproduced without MCP policies or the probe. |
+| #49, discovery | Cached list: 200/backend 0. Explicit backend list: 200/backend 1 and captured Coordinator response. | Corrected distinction passes. |
+| #49, event-stream | MCP Support returns 200 / `-32600`; backend 0; Coordinator is not reached. | Whole-chain fail-closed passes, not a Coordinator 415. |
+| #50, unchanged schemas | Four `inputSchema` drift findings remain, including with both access policies removed and equal descriptors at the validation boundary. | Leave #50 open; internal comparison remains unresolved. |
+| #50, incremental seeding | Enabled adds `description` drift to exactly three unseeded tools; disabled adds none. The asset-planted tool gains no description drift. | Seeding conflict isolated; unrelated schema drift remains. |
+
+### Artifact and instrumentation
+
+Flex **1.14.0**, Rust **1.89.0**, PDK **1.10.0**; **40/40 Coordinator library tests**
+passed. All eight runtime/schema source files in the disposable build are
+byte-identical to this checkout. Only private package/Exchange metadata was
+substituted. Built and loaded WASM SHA-256:
+`2689762370be948e4e67581bcdb011c5f333e8f620f9dfa0626401c50f24106c`.
+The test development policy version is `0.0.1-20261007003210`; MCP test version is
+`0.0.1`. The JSON records their unique test asset names, with scope identifiers
+redacted. No production version or final release was published. The immutable
+`v0.1.0-rc.1` tag still resolves to `f442cba95082b2fcb60c26c0613e327d420635a2`.
+
+The included Message Logging policy captured only the three framing fields and
+controlled fixture bodies immediately before Coordinator. Additional response
+probe placements isolate Coordinator output, ABAC output and the input to Schema
+Validation. These probes do not write headers or bodies. Their position and the
+active request order are recorded per request; headers are diagnostic observations,
+never trusted provenance. Supported simple concatenation and `payload` expressions
+were used after the initial unsupported expressions were rejected.
+
+Readiness checks compare desired configurations against **active Envoy listeners**,
+not merely downloaded WASM, control-plane resources, or draining listeners. One
+seeding attempt accidentally matched a draining listener and was repeated with
+the corrected gate. That attempt remains in the JSON and is not a passing result.
+
+### #48 and #56 framing
+
+For mapped request 108, Coordinator received:
+
+```text
+content-type: application/json
+content-length: absent
+transfer-encoding: absent
+body: {"method":"tools/call","params":{"arguments":{},"name":"inert_decoy"},"id":108,"jsonrpc":"2.0"}
+```
+
+Tool Mapping reverse-transforms the incoming mapped name before Coordinator, as
+its [documented inbound behavior](https://docs.mulesoft.com/gateway/latest/policies-included-mcp-tool-mapping)
+describes. Configuring only the client-visible name therefore cannot satisfy the
+prescribed block assertion. Configuring `inert_decoy` does block both controls.
+No admission rule was loosened to obtain this result.
+
+The client-chunked control also arrives with neither Content-Length nor
+Transfer-Encoding, but without a mapping operation. A further reduction to only
+Coordinator plus a passive probe reproduces the missing headers; removing the
+probe still permits the clean chunked call. A chunked decoy is inspected and
+blocked with `-32008`, so this is a failure of the intended early uninspectable
+classification, not evidence of a decoy-matching bypass. Only finite uploads were
+tested; no timeout, unbounded-buffer, OOM or production DoS result is claimed.
+
+### #50: normalization is real but not the complete explanation
+
+Both downloaded MCP metadata artifacts match the unchanged backend descriptors,
+including `additionalProperties: false`. With the full chain, Coordinator output
+still contains that field, while the probe at ABAC output shows it missing.
+However, removing **both** ABAC and Global Access leaves the field intact at the
+Schema Validation input and still produces four schema-drift findings. This
+narrows the remaining discrepancy to the included validation/pin path; it does
+not establish the internal parsed representations or justify blaming only ABAC.
+A read-only Claude investigation could not access internal source under the
+required plan-mode permissions. No source-level explanation is asserted.
+
+The seeding comparison is independent of that unresolved baseline. With enabled
+seeding, the three descriptions without a breadcrumb gain one and are newly
+flagged for `description`; the already planted `inert_decoy` is not. Disabled
+seeding preserves all four descriptions and the planted breadcrumb, while the
+four schema findings remain. The backend declares Content-Length and provides
+**1056 bytes** of pretty JSON; the seeded Coordinator output is **733 bytes**.
+Thus the non-growing edit has headroom. No bare tool removal is used as proof of
+seeding, and the pinned schemas were not changed to make the run pass.
+
+### Detector controls, Monitoring and cleanup
+
+Sentinel block returns `-32008` without backend execution; monitor forwards.
+Breadcrumb `sanitize` now blocks the request with `-32008`. Honeytoken block
+redacts a declared-length response. The explicit undeclared-response negative
+control is forwarded unredacted with warn `response_inspection_skipped`, matching
+the narrowed contract. Client-chunked observe produces no warn
+`inspection_skipped`, which is part of the new defect.
+
+Monitoring exports **33 requests**, matching every recorded HTTP result, with
+**23 backend calls**, **8 Coordinator violations** and **8 Schema Validation
+violations**. These totals include the retained setup attempts. There is no next
+page. Mixed or minute-boundary rows are not assigned to individual calls. The
+monitor Sentinel case reaches the backend despite its exported `BLOCKED` label;
+that label is not proof of enforcement.
+
+One fresh connected registration, one API/deployment, one disposable client and
+contract, three test Exchange versions, two containers and one dedicated network
+were used. Gateway/backend memory caps were 2 GiB/128 MiB with zero swap and
+verified cgroup limits. Ingress was loopback-only; the backend had no published
+port. Cleanup revoked and deleted the contract, then deleted the API/deployment,
+client and all test versions, with scoped GETs returning 404. Registration deletion
+succeeded and its inventory GET returned 404. Both containers and the network
+were removed and verified absent. Private identity material and raw staging were
+removed after the sanitized evidence was extracted and scanned.
+
+#49's corrected expectations are verified. #48 and #50 retain the failures above;
+there is no all-pass note in the managed-chain runbook. Host-failure and
+response-termination containment remain unverified.
+
+## Preserved 2026-09-25 record
+
 On **2026-09-25 UTC**, all seven prescribed cases were exercised on a disposable
 Flex Gateway **1.14.0** using the user-approved **API deployment operation** in
 place of UI Save & Apply. **This is not an all-seven passing result.** Sentinel
