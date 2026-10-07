@@ -31,7 +31,7 @@ next-step instructions. Then `docs/REMAINING-ISSUES-PLAN.md` for issue/CI status
   `definition/gcl.yaml` (config schema), `src/lib.rs` (filter logic),
   `src/generated/config.rs` (auto-generated — never hand-edit), `tests/`
   (integration tests via `pdk-test`, need Docker), `playground/` (local Flex +
-  sample backend via `make run`), and its own `README.md` + `AGENTS.md`.
+  sample backend via `make run`), and its own `README.md` (the three standalone policies also carry an `AGENTS.md`).
 - `COMPOSITION.md` — the composition contract standalone filters must follow if
   a gateway chains them (they don't share state or a callback); the coordinator
   implements this contract natively.
@@ -125,13 +125,17 @@ registration/identity material.
   or block requests, and can separately seed matching `tools/list` responses.
 - **Decoy Coordinator** (opt-in, stricter contract, version 0.1.0 — the others
   are 1.0.0) — runs all three detectors against the *original* admitted JSON-RPC
-  body before any mutation, resolves required blocks first, applies sanitize only
-  if no terminal block applies, then response-side: required Honeytoken
+  body and **never rewrites a request**: a required block wins, and Breadcrumb
+  `sanitize` blocks exactly like `block` on requests (#54). Response-side: required Honeytoken
   redaction/withholding before optional non-expanding `tools/list` seeding,
   followed by a **mandatory final Honeytoken re-scan** of the actual output bytes
   (a remaining decoy after transformation is a hard composition failure, not a
   success). Bounded to unencoded, single-envelope, ≤64 KiB JSON-RPC 2.0 traffic;
-  batches/duplicates/parser-limit failures are rejected in every mode. See
+  admission is mode-aware — enforcing modes fail closed with bare 415/413/400 on
+  uninspectable/invalid-framing/unsupported requests, monitor/observe forwards them
+  with a warn `inspection_skipped`; a response must declare `Content-Length` or is
+  forwarded uninspected (`response_inspection_skipped`). Event names/levels are in
+  `decoy-coordinator/README.md`. See
   `COMPOSITION.md` for the full contract standalone filters must satisfy if
   chained manually (they do **not** share state — chaining ≠ the coordinator).
 - Config schema lives in each project's `definition/gcl.yaml`; `src/generated/config.rs`
