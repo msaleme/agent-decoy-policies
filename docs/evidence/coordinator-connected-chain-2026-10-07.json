@@ -8163,5 +8163,13 @@
     "https://dev-portal.mulesoft.com/skills/apply-policy-to-api-instance/SKILL.md",
     "https://docs.mulesoft.com/gateway/latest/policies-included-message-logging",
     "https://docs.mulesoft.com/gateway/latest/policies-included-mcp-tool-mapping"
-  ]
+  ],
+  "schemaIsolationFollowup": {
+    "evidence": "coordinator-schema-drift-isolation-2026-10-07.json",
+    "sourceCommit": "6cd8a72",
+    "classification": "Coordinator-independent host/vendor interoperability finding",
+    "status": "isolation settled; vendor comparison behavior remains open",
+    "recommendedProfile": "Descriptor drift LogOnly until resolved; never RemoveTool with this pin shape.",
+    "priorResultsPreserved": true
+  }
 }

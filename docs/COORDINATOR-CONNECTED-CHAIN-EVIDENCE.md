@@ -1,5 +1,111 @@
 # Coordinator Connected Mode chain — live results, with failed expectations
 
+## 2026-10-07 UTC #50 isolation: host/vendor pin-shape behavior
+
+**The drift is Coordinator-independent.** Starting from `6cd8a72` (#65), a fresh
+Connected Flex **1.14.0** ran only **MCP Support 1.1.1 → MCP Schema Validation
+1.3.0**, with descriptor drift enabled, `LogOnly`, and `validateToolSchema: false`.
+No Coordinator, mapping, authentication, access policy, or logging probe was
+installed. The ordinary gateway metrics filter remained present. The original
+four-tool pin was recreated with the same metadata SHA-256. Its unchanged backend
+response returned HTTP 200 with one backend call and four warn `inputSchema`
+findings. All four descriptors reached the client unchanged.
+
+The [isolation record](evidence/coordinator-schema-drift-isolation-2026-10-07.json)
+contains the active-listener checks and loaded WASM hashes, published/downloaded
+metadata, complete schema variants, HTTP results, findings, retained setup
+attempts, and deletion verification. The previous failed and excluded results
+below and in the earlier JSON remain unchanged. #65's resolution of #48, #63 and
+#64 is not reopened by this follow-up.
+
+### Schema bisect and minimal reproduction
+
+Each test version used one inert tool, identical source/backend descriptors, and
+a matching description marker to confirm the new pin through cached discovery.
+Before backend evaluation, `validateToolSchema` was restored to false and checked
+in the **active** listener. The backend declared Content-Length. Headers were
+never used as trusted provenance.
+
+| Tested schema feature | Backend comparison result |
+| --- | --- |
+| `{"type":"object"}` only | Pin cannot load: host parser reports missing `properties`. Cached discovery returns HTTP 200 / `-32603`, backend 0. Its backend-forwarding control is excluded from drift comparisons. |
+| Add `properties: {}` | 200, backend 1, zero drift. Smallest measured loadable pin. |
+| Add an integer property | Zero drift. |
+| Add `required` | Zero drift. |
+| Add `additionalProperties: false` | One `inputSchema` drift finding for the unchanged tool. |
+| Nested property `description` | Zero drift. |
+| `enum`, then `default` | Zero drift in both steps. |
+| Key order | Zero drift, including a backend-only recursive key reorder. |
+| `number` in place of `integer` on both sides | Zero drift. A backend-only integer/number mismatch correctly produces one finding. |
+
+After isolating `additionalProperties: false`, the description/enum/default
+branch starts from the clean `required` baseline without that field. This is an
+explicit test-input bisect, not a policy or production schema change to obtain
+a pass. Every failing variant remains in the evidence.
+
+The decisive cross-comparison keeps the same tool, property and required list:
+
+| Pin `additionalProperties` | Backend `additionalProperties` | Per-tool drift findings |
+| --- | --- | --- |
+| omitted | omitted | 0 |
+| omitted | `false` | 0 |
+| `false` | `false` | 1 |
+| `false` | omitted | 1 |
+
+Minimal **loadable false-drift** reproduction: publish a tool with
+`{"type":"object","properties":{"value":{"type":"integer"}},"required":["value"],"additionalProperties":false}`,
+bind it to the two-policy chain above, and return exactly the same descriptor
+from a declared-length backend `tools/list`. Expect HTTP 200, one backend call,
+the unchanged tool at the client, and a warn `inputSchema` finding. The earlier
+four-tool schema with empty properties also reproduces in this isolated chain.
+
+### What the comparison exposes
+
+LogOnly emits `finding.type: "drift"`, the tool name, and
+`changedFields: ["inputSchema"]`; it does **not** emit a nested JSON path,
+expected/actual operands, or the internal comparison representation. Both
+Exchange JSON artifacts retain `additionalProperties: false`; cached discovery
+omits it. Returning that cached form from the backend still triggers drift when
+the pin contains the field. All LogOnly backend responses preserve their logical
+descriptors on the wire.
+
+The measured asymmetry follows the **pin shape**, not Coordinator, a descriptor
+change in our chain, key order, or Exchange rewriting its downloadable JSON.
+It is consistent with asymmetric/lossy normalization within the included
+pin/comparison path; that is an inference, not a source-level claim about the
+unexposed comparison algorithm. The minimal-schema parser rejection is a second
+host interoperability observation: the [MCP 2025-06-18 type definition](https://raw.githubusercontent.com/modelcontextprotocol/modelcontextprotocol/2025-06-18/schema/2025-06-18/schema.ts)
+makes `properties` optional, while this tested asset parser requires it. Twenty
+cached attempts made before that parser diagnosis are retained and excluded;
+zero findings with an unloaded pin are **not** a clean comparison.
+
+### Recommended profile and disposition
+
+Track #50 as a **host/vendor interoperability finding**, with Coordinator
+independence settled and vendor resolution still open. Use Schema Validation
+**descriptor drift `LogOnly` until resolved; never `RemoveTool` with this pin
+shape**. Keep `validateToolSchema: false` when evaluating backend drift; enabling
+it serves cached discovery and disables that comparison, as the
+[vendor documentation](https://docs.mulesoft.com/gateway/latest/policies-included-mcp-schema-validation)
+describes. Do not remove meaningful production schema constraints to silence the
+finding. This recommendation is scoped to the measured versions, not a claim
+that LogOnly enforces descriptor integrity.
+
+The record retains **49 HTTP attempts**, **18 backend calls**, **17 eligible
+backend comparisons**, and **32 cached or unloaded-pin controls**. Six finding
+events contain nine per-tool findings; these are log findings, **not** an Anypoint
+Monitoring policy-violation count. Existing ABAC normalization and Coordinator
+seeding conclusions were not re-tested.
+
+All disposable resources were deleted: the API and deployment and eleven test
+MCP versions returned 404; both containers and their dedicated network were
+verified absent. Registration deletion succeeded. Gateway inventory retains a
+`DELETED` tombstone with **zero connected replicas** and one disconnected replica
+history entry; physical disappearance of that history is not claimed. Private
+registration, authentication material, raw logs and diagnostic staging were
+removed after sanitized extraction. No production publication, release, runtime,
+enum or policy-schema change occurred; `v0.1.0-rc.1` is preserved.
+
 ## 2026-10-07 UTC rerun: corrected cases and remaining failures
 
 This verification-only rerun used source `c68c12a0d38df9bbea5df377bacd8bef7846714e`,
