@@ -15,7 +15,7 @@ preserved.
 | --- | --- | --- |
 | #48, decoy configured on `mapped_inert_decoy` | 200 success; backend 1. The Coordinator actually receives `inert_decoy`. | Prescribed assertion fails; leave #48 open. |
 | #48, original-name controls | Transformed and untransformed calls both return 200 / `-32008`; backend 0. | Original 415 is resolved for the measured framing. |
-| #56, direct client-chunked upload | Coordinator boundary has neither framing header. Clean calls return 200/backend 1 in enforcing mode; observe emits no `inspection_skipped`. | New admission defect; also reproduced without MCP policies or the probe. |
+| #56, direct client-chunked upload | Coordinator boundary has neither framing header. Clean calls return 200/backend 1 in enforcing mode; observe emits no `inspection_skipped`. | [New admission defect #63](https://github.com/msaleme/agent-decoy-policies/issues/63); also reproduced without MCP policies or the probe. |
 | #49, discovery | Cached list: 200/backend 0. Explicit backend list: 200/backend 1 and captured Coordinator response. | Corrected distinction passes. |
 | #49, event-stream | MCP Support returns 200 / `-32600`; backend 0; Coordinator is not reached. | Whole-chain fail-closed passes, not a Coordinator 415. |
 | #50, unchanged schemas | Four `inputSchema` drift findings remain, including with both access policies removed and equal descriptors at the validation boundary. | Leave #50 open; internal comparison remains unresolved. |
