@@ -28,8 +28,11 @@ instead of racing as independent filters.
   earlier policy such as Tool Mapping drops it after a rewrite; a client-chunked
   upload is uninspectable. A request with neither header (e.g. an HTTP/2 client
   streaming without a length) is buffered up to the gateway's downstream buffer
-  limit before the 64 KiB bound applies — configure those limits. **Responses**
-  must declare their length. It is **not** a generic MCP Streamable HTTP policy:
+  limit before the 64 KiB bound applies — configure those limits. On Flex Gateway
+  1.14 the host strips `Transfer-Encoding` from a chunked upload before the policy
+  runs, so that upload is inspected like a dropped-length body; enforce framing at
+  ingress (the repository's optional upload gate) if chunked uploads must be
+  refused. **Responses** must declare their length. It is **not** a generic MCP Streamable HTTP policy:
   `text/event-stream` and other streamed, chunked, compressed, non-JSON or
   present-but-oversized bodies are uninspectable and are never buffered.
 - **Detection on the original body:** all three detectors evaluate the original
@@ -106,6 +109,12 @@ caseSensitive: false
 ```
 
 ## FAQ tab
+
+**Which tool names go in `decoyTools` when MCP Tool Mapping is in the chain?**
+The backend (asset) names. With Tool Mapping before this policy, a client calling
+the mapped name reaches this policy already translated back to the backend name,
+and `tools/list` passes this policy before Tool Mapping renames it. Configuring
+only the client-visible name does not match.
 
 **Does it support SSE / streaming MCP responses?** No. Scope is bounded finite
 single-envelope JSON-RPC. Uninspectable bodies are never buffered (no stall).

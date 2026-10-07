@@ -87,6 +87,17 @@ def exchange(port, data):
         return response.status, body
 
 
+def readiness_report(clean, startup, admitted, containers):
+    """Describe a failed first exchange without logs, which may carry identity."""
+    states = {}
+    for label, container in containers.items():
+        state = json.loads(docker('inspect', '--format={{json .State}}', container).stdout)
+        states[label] = {key: state.get(key) for key in ('Status', 'Running', 'OOMKilled', 'ExitCode')}
+    kind = 'readiness never reached' if clean[0] in ('reset', 0, 503) else 'gate answered'
+    return (f'first /clean exchange failed ({kind}): status={clean[0]!r} body={clean[1][:200]!r} '
+            f'startup_attempts={startup!r} backend_admitted={admitted!r} containers={states!r}')
+
+
 def slow(port):
     with socket.create_connection(('127.0.0.1', port), timeout=6) as stream:
         stream.sendall(headers('/slow', 100))
@@ -184,17 +195,24 @@ def main():
                 time.sleep(0.1)
         assert inspect_limits(name, 134217728) == 134217728
         # Docker's port proxy accepts TCP before HAProxy listens inside the
-        # container, so a connect probe is not readiness: retry only a reset first
-        # request. A reset never reached the backend, and admissions() below still
-        # rejects any duplicate admission.
+        # container, so a connect probe is not readiness. Startup shows up as a
+        # reset, a close without a response (status 0), or a 503 while the next
+        # hop is not yet listening; none of those reached the backend. Retry only
+        # those, and admissions() below still rejects any duplicate admission.
+        startup = []
         for attempt in range(50):
             try:
                 clean = exchange(port, headers('/clean', 5)+b'clean')
-                break
             except ConnectionResetError:
-                if attempt == 49: raise
-                time.sleep(0.1)
-        assert clean == (200, b'clean')
+                clean = ('reset', b'')
+            if clean[0] not in ('reset', 0, 503): break
+            startup.append(clean[0])
+            time.sleep(0.1)
+        if clean != (200, b'clean'):
+            try: admitted = admissions()
+            except AssertionError as error: admitted = str(error)
+            raise AssertionError(readiness_report(clean, startup, admitted,
+                                                  {'gate': name, 'backend': backend, **({'flex': flex} if with_flex else {})}))
         if with_flex:
             token = b'outer-gate-decoy'
             assert exchange(port, headers('/blocked', len(token))+token)[0] == 403

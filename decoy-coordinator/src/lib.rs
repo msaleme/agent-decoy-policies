@@ -24,7 +24,9 @@ enum Admit {
     /// missing length is NOT by itself uninspectable; the buffered body is bounded
     /// against LIMIT instead (#48). A client-chunked upload and every response
     /// with an undeclared length stay uninspectable, so a slow or long-lived body
-    /// is classified in the header phase and never buffered (#56).
+    /// is classified in the header phase and never buffered (#56). Flex Gateway
+    /// 1.14 strips Transfer-Encoding from a de-chunked upload before this filter,
+    /// so there such an upload lands here; refuse chunked framing at ingress (#63).
     Undeclared,
 }
 fn admission(

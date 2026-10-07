@@ -61,7 +61,7 @@ envelope, `content-type: application/json`, exact `content-length`.
 | 4 | `honeytokenMode: block` | response carrying the honeytoken (bounded JSON) | honeytoken absent from body | Coordinator redacts on the reverse path |
 | 5 | `seeding: enabled`, Schema Validation `RemoveTool` | `tools/list` | seeded tool removed OR response blocked | confirms the seeding/trusted-descriptor conflict → keep `seeding: disabled` |
 | 6 | any enforcing mode | `text/event-stream` request | 415, backend NOT reached | Coordinator fails closed on uninspectable; SSE handled by MCP Support/ABAC, not this policy |
-| 7 | Tool Mapping renaming the decoy | `tools/call` of the **mapped** name, Coordinator configured on the **mapped** name | 200 `-32008` in block mode | confirms decoy/breadcrumb must be configured against mapped names |
+| 7 | Tool Mapping renaming the decoy | `tools/call` of the **mapped** name, Coordinator configured on the **backend** name | 200 `-32008` in block mode, backend NOT reached | confirms decoy/breadcrumb must be configured against backend names (#48) |
 
 ## Assertions
 
@@ -131,6 +131,29 @@ contract a re-run must satisfy. Do not present the original rows as passing.
   must (a) **instrument** the actual content-type / content-length / transfer-encoding
   the mapped request carries to confirm the root cause, then (b) re-verify Case 7
   reaches `-32008` with the decoy configured on the **mapped** name.
+
+  **Resolved by the 2026-10-07 connected re-run
+  ([evidence](../../docs/COORDINATOR-CONNECTED-CHAIN-EVIDENCE.md)).** The mapped
+  request reached the Coordinator as `application/json` with neither
+  `Content-Length` nor `Transfer-Encoding`, so the 415 is gone. It also carried the
+  **backend** name `inert_decoy`: Tool Mapping reverse-transforms a mapped name
+  before later policies. With `decoyTools: [mapped_inert_decoy]` the call was
+  forwarded (200, backend 1) — the original "mapped name" expectation in (b) was
+  wrong. With `decoyTools: [inert_decoy]` both the mapped and original-name calls
+  returned 200 / `-32008`, backend 0. Case 7 is now stated against the backend name.
+
+- **Client-chunked uploads are not refused on Flex Gateway 1.14 (#63).** A finite
+  HTTP/1.1 `Transfer-Encoding: chunked` `tools/call` reached the Coordinator with
+  neither framing header — the same representation as a Tool Mapping rewrite — so
+  the #56 early rejection/skip cannot fire there: a clean chunked call was
+  forwarded (200, backend 1) in enforcing mode, and observe mode logged no
+  `inspection_skipped`. A chunked **decoy** was still inspected and blocked
+  (`-32008`, backend 0), so this is not a matching bypass. The Coordinator cannot
+  distinguish client transport from a policy rewrite by headers (which are never
+  trusted provenance), so the boundary belongs at ingress: the optional
+  [upload gate](../../deployment/upload-gate/README.md) refuses any
+  `Transfer-Encoding` before Flex. Only finite uploads were tested; buffering,
+  timeout and memory behavior for unbounded uploads is unverified.
 
 ## Automation hook
 
