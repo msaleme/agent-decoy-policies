@@ -21,6 +21,14 @@ must match the body exactly.
   with neither header (for example an HTTP/2 client streaming without a length) is
   buffered up to the gateway's downstream buffer limit and timeout before the
   64 KiB bound applies; configure those limits before deployment.
+  **On Flex Gateway 1.14 the chunked check does not take effect (#63):** the host
+  de-chunks an HTTP/1.1 chunked upload and removes `Transfer-Encoding` before the
+  policy runs, so the upload arrives exactly like a rewritten body with a dropped
+  length — it is buffered, inspected (a decoy is still blocked) and bounded by the
+  64 KiB ceiling only after the host has buffered it. To keep chunked uploads out,
+  enforce framing at ingress: the optional
+  [upload gate](../deployment/upload-gate/README.md) rejects any
+  `Transfer-Encoding` and requires one declared `Content-Length` ≤ 64 KiB.
 - **Responses:** must declare a valid `Content-Length` within 64 KiB. A chunked or
   otherwise undeclared-length response is uninspectable, including one whose length
   a policy placed after this one in the chain dropped.
@@ -115,7 +123,7 @@ profile below.
 | MCP Support | Must be first in the chain | Keep first; Coordinator after it |
 | MCP Schema Validation (`validateToolSchema`) | Treats a seeded description as descriptor drift (LogOnly/RemoveTool/BlockResponse) | `seeding: disabled`; plant the breadcrumb in the approved asset |
 | MCP Global Access / ABAC | Can hide or reject the decoy tool, removing Sentinel discoverability | The decoy tool must be inert, present in the approved asset, and allowed for monitored principals |
-| MCP Tool Mapping | Renames tools before this policy sees them | Configure decoy/breadcrumb against the mapped names |
+| MCP Tool Mapping | Placed before this policy, it maps client-visible names back to backend names on the request, and renames after this policy on the response | Configure `decoyTools`/breadcrumb with the **backend (asset) names** — the names this policy actually sees — not the client-visible mapped names (verified connected, #48) |
 
 **Recommended profile:** observe-first (`honeytokenMode: monitor`,
 `sentinelMode: monitor`, `breadcrumbMode: observe`, `seeding: disabled`) to learn

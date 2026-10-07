@@ -19,6 +19,18 @@
   - Event names and levels match the docs: `inspection_skipped` (warn),
     `seed_skipped_no_capacity` (info); the bare 415/413/400 rejections are
     documented (#57).
+  - Docs (#48): with MCP Tool Mapping before the Coordinator, configure
+    `decoyTools`/breadcrumb with the backend (asset) names — Tool Mapping maps a
+    client-visible name back before the Coordinator sees it (connected re-run
+    2026-10-07). Managed-chain Case 7 is restated accordingly.
+  - Docs (#63): on Flex Gateway 1.14 the host strips `Transfer-Encoding` from a
+    chunked upload before the policy runs, so the #56 chunked check cannot refuse
+    it there; the upload is inspected like a dropped-length body (decoys still
+    block). Enforce framing at ingress with the optional upload gate.
+  - CI (#64): the upload-gate harness retries only startup outcomes (reset, close
+    without response, 503) on its first exchange, and a remaining failure reports
+    status, a bounded body prefix, container state and backend admissions instead
+    of a bare assertion. The exact-once backend admission check is unchanged.
   - Standard PDK Makefile: `make build` builds only this policy; the repo-wide gate
     moved to `make runtime-gate`. Adds a `playground/` for `make run` (#53).
 
