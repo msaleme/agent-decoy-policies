@@ -47,6 +47,100 @@ fn forged_headers_cannot_suppress_response_redaction() {
     assert_eq!(response.header("content-length"), None);
 }
 #[test]
+fn response_honeytoken_detection_logs_only_boolean_detectors_in_both_modes() {
+    for configuration in [config(), monitor_config("observe")] {
+        let mut test = UnitTestBuilder::default()
+            .with_config(configuration)
+            .with_backend(backend)
+            .with_entrypoint(super::configure);
+        assert_eq!(
+            test.request(request(r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#))
+                .status_code(),
+            200
+        );
+        let events: Vec<serde_json::Value> = test
+            .logs()
+            .iter()
+            .filter_map(|line| line.split_once(" - Warn: "))
+            .filter_map(|(_, message)| message.find('{').map(|start| &message[start..]))
+            .filter_map(|message| serde_json::from_str::<serde_json::Value>(message).ok())
+            .filter(|event| event["event"] == "agent_decoy_detection")
+            .collect();
+        assert_eq!(
+            events,
+            vec![json!({
+                "event": "agent_decoy_detection", "stage": "response",
+                "honeytoken": true, "breadcrumb": false, "sentinel": false
+            })]
+        );
+        assert!(!test
+            .logs()
+            .iter()
+            .any(|line| line.contains("secret") || line.contains("lure")));
+    }
+}
+#[test]
+fn response_length_mismatch_is_withheld_with_a_distinct_reason() {
+    let body = r#"{"jsonrpc":"2.0","id":1,"result":{}}"#;
+    let mut test = UnitTestBuilder::default()
+        .with_config(config())
+        .with_backend(move |_: UnitHttpRequest| {
+            UnitHttpResponse::new(200)
+                .with_header("content-type", "application/json")
+                .with_header("content-length", (body.len() + 1).to_string())
+                .with_body(body)
+        })
+        .with_entrypoint(super::configure);
+    let response = test.request(request(r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#));
+    assert_eq!(response.status_code(), 200);
+    assert!(response.body().is_empty());
+    assert_eq!(response.header("content-length"), None);
+    assert!(logged(
+        &test,
+        "Warn",
+        r#""reason":"declared-length-mismatch""#
+    ));
+    assert!(logged(&test, "Warn", r#""applied":"withheld""#));
+    assert!(!test
+        .logs()
+        .iter()
+        .any(|line| line.contains("final-output-validated")));
+}
+#[test]
+fn monitor_response_length_mismatch_is_not_reported_as_seeding_capacity() {
+    let list = r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"t","description":"d"}]}}"#;
+    let mut test = UnitTestBuilder::default()
+        .with_config(monitor_config("observe").replace("\"disabled\"", "\"enabled\""))
+        .with_backend(move |_: UnitHttpRequest| {
+            UnitHttpResponse::new(200)
+                .with_header("content-type", "application/json")
+                .with_header("content-length", (list.len() + 1).to_string())
+                .with_body(list)
+        })
+        .with_entrypoint(super::configure);
+    let response = test.request(request(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#));
+    assert_eq!(response.status_code(), 200);
+    assert_eq!(response.body(), list.as_bytes());
+    assert_eq!(
+        response.header("content-length"),
+        Some((list.len() + 1).to_string()).as_deref()
+    );
+    assert!(logged(
+        &test,
+        "Info",
+        r#""event":"response_inspection_skipped""#
+    ));
+    assert!(logged(
+        &test,
+        "Info",
+        r#""reason":"declared-length-mismatch""#
+    ));
+    assert!(!test
+        .logs()
+        .iter()
+        .any(|line| line.contains("seed_skipped_no_capacity")));
+}
+#[test]
 fn block_prevents_upstream_even_when_marker_would_be_sanitized() {
     let trace = Rc::new(TraceBackend::new(backend));
     let mut test = UnitTestBuilder::default()
@@ -110,6 +204,7 @@ fn unsupported_envelope_still_emits_detection_telemetry() {
 }
 #[test]
 fn a_client_chunked_json_upload_is_classified_in_the_header_phase() {
+    // Host-dependent: this fixture retains Transfer-Encoding; Flex 1.14 strips it.
     // A client-chunked JSON upload has no declared length and could be slow or
     // oversized. It is not admitted as `Undeclared` (#56): enforcing fails closed
     // with 415 before buffering, observe forwards it with a warning-level skip.
@@ -167,6 +262,7 @@ fn an_undeclared_length_response_is_not_buffered_and_warns_in_block_mode() {
 }
 #[test]
 fn a_small_chunked_upload_is_rejected_by_headers_not_size() {
+    // Host-dependent: only hosts retaining Transfer-Encoding exercise this guard.
     // Unlike the over-limit case above, this body would pass every size check, so
     // a 415 proves the classification is made from the headers alone (#56).
     let body = r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#;
