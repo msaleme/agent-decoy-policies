@@ -61,6 +61,39 @@ class BundleTests(unittest.TestCase):
     def test_matching_bundle_passes(self):
         self.assertEqual(gate.inspect_bundle(self.root, self.policy), [])
 
+    def write_runtime_metadata(self):
+        for relative in gate.METADATA_FILES:
+            path = self.root / self.policy / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("minRuntimeVersion: 1.14.0\n")
+
+    def test_runtime_metadata_requires_both_variants_at_exact_minimum(self):
+        folder = self.root / self.policy
+        self.assertEqual(len(gate.inspect_runtime_metadata(folder)), 2)
+        self.write_runtime_metadata()
+        self.assertEqual(gate.inspect_runtime_metadata(folder), [])
+        for relative in gate.METADATA_FILES:
+            for content in ("minRuntimeVersion: 1.6.1\n", "minRuntimeVersion: 1.15.0\n",
+                            "minRuntimeVersion: 1.6.1\nminRuntimeVersion: 1.14.0\n",
+                            "{}", "[]", "not: [valid"):
+                with self.subTest(path=relative, content=content):
+                    self.write_runtime_metadata()
+                    (folder / relative).write_text(content)
+                    self.assertTrue(gate.inspect_runtime_metadata(folder))
+                    self.assertTrue(gate.inspect_bundle(self.root, self.policy))
+            self.write_runtime_metadata()
+            (folder / relative).unlink()
+            self.assertTrue(gate.inspect_runtime_metadata(folder))
+            self.assertTrue(gate.inspect_bundle(self.root, self.policy))
+
+    def test_exchange_metadata_gate_rejects_missing_or_wrong_pin(self):
+        with patch.object(gate, "ROOT", self.root), patch.object(gate, "POLICIES", (self.policy,)), patch("sys.argv", ["gate", "--exchange-metadata-only"]), contextlib.redirect_stdout(io.StringIO()):
+            self.assertNotEqual(gate.main(), 0)
+            self.write_runtime_metadata()
+            self.assertEqual(gate.main(), 0)
+            (self.root / self.policy / gate.METADATA_FILES[1]).write_text("minRuntimeVersion: 1.6.1\n")
+            self.assertNotEqual(gate.main(), 0)
+
     def test_stale_schema_is_rejected(self):
         source = self.source
         source["spec"]["properties"]["newField"] = {"type": "string"}

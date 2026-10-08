@@ -16,6 +16,9 @@ reviewer to refresh the listing.
 
 ## Overview (Description tab)
 
+**Requires Flex Gateway / Omni Gateway ≥ 1.14.0.**
+On 1.12.1 the combined response state can hang the response leg (Envoy 504, #12/#67).
+
 An opt-in single Flex policy that coordinates the three decoy detectors —
 Honeytoken, Decoy-Tool Sentinel and Breadcrumb — over one bounded JSON-RPC 2.0
 exchange, so their block/redact/seed actions are ordered deterministically
@@ -23,18 +26,17 @@ instead of racing as independent filters.
 
 - **Scope:** bounded, unencoded, finite **single-envelope** JSON-RPC 2.0 only
   (unencoded JSON media, buffered body ≤ 64 KiB). A `Content-Length`, when present,
-  must match the body exactly. On **requests** an absent length is still inspected
-  and bounded against 64 KiB when the client sent no `Transfer-Encoding` — an
-  earlier policy such as Tool Mapping drops it after a rewrite; a client-chunked
-  upload is uninspectable. A request with neither header (e.g. an HTTP/2 client
-  streaming without a length) is buffered up to the gateway's downstream buffer
-  limit before the 64 KiB bound applies — configure those limits. On Flex Gateway
-  1.14 the host strips `Transfer-Encoding` from a chunked upload before the policy
-  runs, so that upload is inspected like a dropped-length body; enforce framing at
-  ingress (the repository's optional upload gate) if chunked uploads must be
-  refused. **Responses** must declare their length. It is **not** a generic MCP Streamable HTTP policy:
-  `text/event-stream` and other streamed, chunked, compressed, non-JSON or
-  present-but-oversized bodies are uninspectable and are never buffered.
+  must match the body exactly. On Flex Gateway 1.14 the host de-chunks uploads and
+  strips `Transfer-Encoding` before this policy runs. **Requests** with neither a
+  visible length nor `Transfer-Encoding` are buffered up to the host's downstream
+  buffer limit, then inspected against 64 KiB. An earlier policy such as Tool
+  Mapping can also drop the length after a rewrite. Configure the host buffer
+  limit and request timeout. The `Transfer-Encoding` admission guard only applies
+  on hosts that retain that header; use ingress enforcement (the repository's
+  optional upload gate) if chunked uploads must be refused before buffering.
+  **Responses** must declare their length. This is **not** a generic MCP Streamable
+  HTTP policy: event-stream, compressed, non-JSON and oversized declared bodies,
+  plus undeclared-length responses, are uninspectable and never buffered.
 - **Detection on the original body:** all three detectors evaluate the original
   body; a required block wins. Requests are never rewritten.
 - **Telemetry:** the policy emits **structured gateway log events** for a
@@ -60,6 +62,9 @@ instead of racing as independent filters.
   passes through unmodified with a warning-level `inspection_skipped` event.
 
 ## Configuration tab
+
+**Requires Flex Gateway / Omni Gateway ≥ 1.14.0.**
+On 1.12.1 the combined response state can hang the response leg (Envoy 504, #12/#67).
 
 ```yaml
 honeytokens: [example-decoy-value]     # planted values to watch for (≤64, ≤256B each)

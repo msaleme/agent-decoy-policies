@@ -56,7 +56,8 @@ endif
 
 .PHONY: test
 test: build ## Run integration tests
-	@cargo test -- --nocapture
+	@cargo test --lib -- --nocapture
+	@cargo test --test requests -- --nocapture --test-threads=1
 
 FORMAT     ?=
 OUTPUT_PATH ?=
@@ -79,6 +80,7 @@ release: build ## Publish a release version
 .PHONY: build-asset-files
 build-asset-files: $(DEFINITION_SRC_GCL_PATH)
 	@anypoint-cli-v4 pdk policy-project build-asset-files --metadata '$(ANYPOINT_METADATA_JSON)'
+	@python3 ../scripts/set_min_flex_runtime.py
 	@cargo anypoint config-gen -p -m $(DEFINITION_SRC_GCL_PATH) -o src/generated/config.rs
 
 .PHONY: install-cargo-anypoint

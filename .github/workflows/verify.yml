@@ -11,6 +11,45 @@ concurrency:
   group: verify-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  exchange-availability:
+    runs-on: ubuntu-24.04
+    outputs:
+      available: ${{ steps.check.outputs.available }}
+    steps:
+      - id: check
+        env:
+          ANYPOINT_GROUP_ID: ${{ secrets.ANYPOINT_GROUP_ID }}
+        run: |
+          if [ -n "$ANYPOINT_GROUP_ID" ]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+          fi
+  exchange-metadata:
+    needs: exchange-availability
+    if: needs.exchange-availability.outputs.available == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install pinned metadata tooling
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          cargo +1.89.0 install cargo-anypoint --version 1.9.0 --locked
+          npm install -g anypoint-cli-v4-public@1.6.27
+          anypoint-cli-v4 plugins:install anypoint-pdk-plugin@1.9.0
+          python3 -m venv /tmp/metadata-ci-python
+          /tmp/metadata-ci-python/bin/pip install PyYAML==6.0.2
+          echo /tmp/metadata-ci-python/bin >> "$GITHUB_PATH"
+      - name: Generate, validate and redact both metadata variants for all policies
+        env:
+          ANYPOINT_GROUP_ID: ${{ secrets.ANYPOINT_GROUP_ID }}
+        run: |
+          python3 scripts/verify_exchange_runtime.py
+          python3 scripts/flex_runtime_gate.py --exchange-metadata-only
+          git diff --exit-code
   upload-gate:
     runs-on: ubuntu-24.04
     timeout-minutes: 5

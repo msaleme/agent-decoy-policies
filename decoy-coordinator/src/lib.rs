@@ -18,15 +18,14 @@ enum Admit {
     Uninspectable,
     /// JSON media with a valid declared Content-Length within the 64 KiB ceiling.
     Declared(usize),
-    /// Request-leg JSON media with no declared Content-Length and no
-    /// Transfer-Encoding. A trusted earlier MCP policy that rewrites the request
-    /// body (e.g. Tool Mapping) drops Content-Length after `set_body`, so that
-    /// missing length is NOT by itself uninspectable; the buffered body is bounded
-    /// against LIMIT instead (#48). A client-chunked upload and every response
-    /// with an undeclared length stay uninspectable, so a slow or long-lived body
-    /// is classified in the header phase and never buffered (#56). Flex Gateway
-    /// 1.14 strips Transfer-Encoding from a de-chunked upload before this filter,
-    /// so there such an upload lands here; refuse chunked framing at ingress (#63).
+    /// Request-leg JSON media with no declared Content-Length and no visible
+    /// Transfer-Encoding. Flex 1.14 de-chunks uploads and strips Transfer-Encoding
+    /// before this filter, so they enter here: buffering is bounded by the host's
+    /// downstream buffer limit and timeout, then inspected against LIMIT (#63).
+    /// An earlier MCP policy can also drop Content-Length after `set_body` (#48).
+    /// The Transfer-Encoding guard only excludes undeclared uploads on hosts that
+    /// retain the header. Refuse chunked framing at ingress if needed. Responses
+    /// with an undeclared length always stay uninspectable (#56).
     Undeclared,
 }
 fn admission(
@@ -131,12 +130,12 @@ async fn request_filter(
     if !headers.contains_body() {
         return Flow::Continue(None);
     }
-    // Classify in the header phase, before any whole-body buffering. Uninspectable
-    // traffic (text/event-stream and other true streams, compressed, non-JSON, a
-    // client-chunked upload, or an oversized/malformed declared length) fails
-    // closed when enforcing and otherwise passes through untouched (#38, #56). A
-    // JSON body whose Content-Length a trusted earlier policy dropped is still
-    // inspected, bounded against LIMIT (#48).
+    // Flex 1.14 de-chunks uploads and strips Transfer-Encoding before this filter:
+    // undeclared JSON is buffered up to the host limit, then checked against LIMIT.
+    // This also admits bodies whose length an earlier policy dropped (#48, #63).
+    // Header-phase exclusions (SSE, compressed, non-JSON, an oversized/malformed
+    // length, or an undeclared upload whose Transfer-Encoding remains visible)
+    // fail closed when enforcing and pass through untouched otherwise (#38, #56).
     //
     // Rejections before a body is proven to be one well-formed JSON-RPC request
     // (415, 413, 400) are bare HTTP statuses: there is no unambiguous `id` to
@@ -145,6 +144,7 @@ async fn request_filter(
         headers.handler().header("content-type"),
         headers.handler().header("content-length"),
         headers.handler().header("content-encoding"),
+        // Host-dependent: Flex 1.14 has already stripped this header (#63).
         headers.handler().header("transfer-encoding").is_none(),
     ) {
         Admit::Uninspectable => {
@@ -249,6 +249,7 @@ async fn response_filter(
     let handler = state.handler();
     let original = handler.body();
     if engine.response_hit(&original) {
+        detection("response", true, false, false);
         alert(
             "response",
             if engine.response_enforced() {
@@ -271,7 +272,14 @@ async fn response_filter(
     if output == original {
         // Distinguish enabled-but-skipped seeding from a genuine no-op so operators
         // do not mistake best-effort seeding for a guaranteed edit (#41).
-        if engine.seed_applicable(&original, id.as_ref()) {
+        if !bounded {
+            skipped(
+                "response_inspection_skipped",
+                "response",
+                "declared-length-mismatch",
+                engine.response_enforced(),
+            );
+        } else if engine.seed_applicable(&original, id.as_ref()) {
             skipped("seed_skipped_no_capacity", "response", "no-capacity", false);
         } else {
             event(
@@ -296,14 +304,22 @@ async fn response_filter(
                 "failed",
                 "pdk-response-termination-unavailable",
             );
-            logger::error!("Required response mutation and empty-body fallback both failed");
             return;
         }
         applied = "withheld";
     }
     handler.remove_header("content-length");
     handler.remove_header("content-encoding");
-    alert("response", "coordinate", applied, "final-output-validated");
+    alert(
+        "response",
+        "coordinate",
+        applied,
+        if bounded {
+            "final-output-validated"
+        } else {
+            "declared-length-mismatch"
+        },
+    );
 }
 #[entrypoint]
 async fn configure(

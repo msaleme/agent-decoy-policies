@@ -1,5 +1,8 @@
 # Decoy Tool Sentinel
 
+**Requires Flex Gateway / Omni Gateway ≥ 1.14.0.**
+On 1.12.1 the combined response state can hang the response leg (Envoy 504, #12/#67).
+
 > Part of the [Agent Decoy Policies](../README.md) family. Project term: **decoy tool**; see [design provenance](../ATTRIBUTION.md#design-references).
 > NIST SP 800-53 Rev 5 **SC-26** (Decoys), **SC-30** (Concealment & Misdirection), **SI-4**. OWASP **LLM06**.
 

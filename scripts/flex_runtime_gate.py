@@ -15,6 +15,7 @@ import re
 import subprocess
 
 import yaml
+from set_min_flex_runtime import METADATA_FILES, MIN_RUNTIME
 
 ROOT = Path(__file__).resolve().parents[1]
 POLICIES = ("mcp-honeytoken-tripwire", "decoy-tool-sentinel", "breadcrumb-misdirection", "decoy-coordinator")
@@ -35,9 +36,28 @@ def fixture_name(folder):
     return match[1]
 
 
+def inspect_runtime_metadata(folder):
+    """Require both generated Exchange variants to declare the tested runtime."""
+    errors = []
+    for relative in METADATA_FILES:
+        try:
+            text = (folder / relative).read_text()
+            metadata = yaml.safe_load(text)
+            if (sum(line.startswith("minRuntimeVersion:") for line in text.splitlines()) != 1
+                    or metadata.get("minRuntimeVersion") != MIN_RUNTIME):
+                errors.append(f"{relative}: minRuntimeVersion must be {MIN_RUNTIME}")
+        except (OSError, ValueError, AttributeError, yaml.YAMLError):
+            errors.append(f"{relative}: missing or malformed implementation metadata")
+    return errors
+
+
 def inspect_bundle(root, policy):
     folder, release, stem = paths(root, policy)
     errors = []
+    # Local bundles need no Exchange identity. If either Exchange variant has
+    # been built, require both and reject stale or incomplete runtime pins.
+    if any((folder / relative).exists() for relative in METADATA_FILES):
+        errors.extend(inspect_runtime_metadata(folder))
     try:
         name = fixture_name(folder)
         source = yaml.safe_load((folder / "definition/gcl.yaml").read_text())
@@ -118,10 +138,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--prepare", action="store_true", help="Build offline and regenerate local test assets; never starts Docker")
     parser.add_argument("--assets-only", action="store_true", help="Check build assets without requiring or inspecting a registration")
+    parser.add_argument("--exchange-metadata-only", action="store_true",
+                        help="Require both built Exchange metadata variants for every policy; never reads identity files")
     args = parser.parse_args()
+    if args.exchange_metadata_only and args.prepare:
+        parser.error("--exchange-metadata-only checks existing metadata; it cannot be used with --prepare")
     blocked = False
     for policy in POLICIES:
         folder, release, stem = paths(ROOT, policy)
+        if args.exchange_metadata_only:
+            errors = inspect_runtime_metadata(folder)
+            print(f"{policy}: runtime metadata " + ("PASS" if not errors else "FAIL: " + "; ".join(errors)))
+            blocked |= bool(errors)
+            continue
         if args.prepare:
             try:
                 prepare(ROOT, policy)

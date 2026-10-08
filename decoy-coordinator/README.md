@@ -1,5 +1,8 @@
 # Decoy Coordinator (0.1.0)
 
+**Requires Flex Gateway / Omni Gateway ≥ 1.14.0.**
+On 1.12.1 the combined response state can hang the response leg (Envoy 504, #12/#67).
+
 An opt-in single Flex policy implementing the bounded composition contract in
 [COMPOSITION.md](../COMPOSITION.md). Use it instead of chaining the three
 independent filters when their actions must be coordinated. It is not a drop-in
@@ -13,21 +16,17 @@ traffic is an unencoded JSON media type carrying one unambiguous JSON-RPC envelo
 whose buffered body is at most 64 KiB. A decimal `Content-Length`, when present,
 must match the body exactly.
 
-- **Requests:** if `Content-Length` is **absent** and the client sent no
-  `Transfer-Encoding`, the body is still inspected and bounded against the 64 KiB
-  ceiling — a trusted earlier MCP policy (e.g. Tool Mapping) drops `Content-Length`
-  after rewriting the body, so that missing length is not by itself uninspectable.
-  A client-chunked upload (`Transfer-Encoding` present) is uninspectable. A request
-  with neither header (for example an HTTP/2 client streaming without a length) is
-  buffered up to the gateway's downstream buffer limit and timeout before the
-  64 KiB bound applies; configure those limits before deployment.
-  **On Flex Gateway 1.14 the chunked check does not take effect (#63):** the host
-  de-chunks an HTTP/1.1 chunked upload and removes `Transfer-Encoding` before the
-  policy runs, so the upload arrives exactly like a rewritten body with a dropped
-  length — it is buffered, inspected (a decoy is still blocked) and bounded by the
-  64 KiB ceiling only after the host has buffered it. To keep chunked uploads out,
-  enforce framing at ingress: the optional
-  [upload gate](../deployment/upload-gate/README.md) rejects any
+- **Requests:** on Flex Gateway 1.14, the host de-chunks uploads and strips
+  `Transfer-Encoding` before this policy runs (#63). JSON uploads without a visible
+  `Content-Length` or `Transfer-Encoding` are buffered up to the host's downstream
+  buffer limit, then inspected against the 64 KiB ceiling; a decoy is still blocked.
+  An earlier policy such as Tool Mapping can also drop `Content-Length` after a
+  rewrite. Configure `FLEX_DOWNSTREAM_CONNECTION_BUFFER_LIMIT_BYTES` and the
+  gateway's request timeout before deployment: the policy's 64 KiB check applies
+  **after** the host buffers an undeclared-length body, including an HTTP/2 upload.
+  The `Transfer-Encoding` admission guard only applies on hosts that retain that
+  header. To refuse chunked framing before buffering, use ingress enforcement:
+  the optional [upload gate](../deployment/upload-gate/README.md) rejects any
   `Transfer-Encoding` and requires one declared `Content-Length` ≤ 64 KiB.
 - **Responses:** must declare a valid `Content-Length` within 64 KiB. A chunked or
   otherwise undeclared-length response is uninspectable, including one whose length
@@ -93,11 +92,11 @@ SSE.
 
   | `event` | Level | When |
   |---|---|---|
-  | `agent_decoy_detection` | warn | A detector matched on a request, including an unsupported envelope or a mismatched-length body within 64 KiB (raw-byte match; Sentinel needs a parsed `tools/call`). Fields: `stage`, `honeytoken`, `breadcrumb`, `sentinel` — booleans only, never lure values |
+  | `agent_decoy_detection` | warn | A request detector or response Honeytoken matched (`stage: "request"` or `"response"`). Request matches include an unsupported envelope or a mismatched-length body within 64 KiB (raw-byte match; Sentinel needs a parsed `tools/call`). Fields: `stage`, `honeytoken`, `breadcrumb`, `sentinel` — booleans only, never lure values |
   | `inspection_skipped` | warn | Monitor/observe forwarded a request it could not inspect. Fields: `stage`, `reason` (`uninspectable-body`, `invalid-framing`, `unsupported-jsonrpc`) |
-  | `response_inspection_skipped` | warn in Honeytoken block mode, info otherwise | A response was forwarded uninspected (streamed, undeclared length, compressed, non-JSON). Fields: `stage`, `reason` |
+  | `response_inspection_skipped` | warn in Honeytoken block mode, info otherwise | Response inspection was skipped for `uninspectable-body` (streamed, undeclared length, compressed, non-JSON), or `declared-length-mismatch` on an unchanged body. Fields: `stage`, `reason` |
   | `seed_skipped_no_capacity` | info | Seeding applied but the marker did not fit without growing the body |
-  | `agent_decoy_composition` | warn for detections and enforcement actions/failures; debug for clean pass-through and no-ops | Coordinated verdict. Fields: `stage`, `requested`, `applied`, `reason` |
+  | `agent_decoy_composition` | warn for detections and enforcement actions/failures; debug for clean pass-through and no-ops | Coordinated verdict. Fields: `stage`, `requested`, `applied`, `reason`; `declared-length-mismatch` identifies withholding for invalid response framing, distinct from `final-output-validated`. Failed mutation and fallback use `pdk-response-termination-unavailable` |
 
   Monitor mode records detections without requiring redaction.
 
@@ -190,7 +189,14 @@ organization ID; the committed placeholder is rejected.
 `make runtime-gate` (or `python3 scripts/flex_runtime_gate.py --prepare
 --assets-only` from the repository root) builds and checks the local Flex runtime
 bundles for all four policies without credentials; it is a test gate, not on the
-publish path. To run
+publish path. Any existing Exchange metadata is also checked for the 1.14.0 pin.
+With the owning group ID supplied through `ANYPOINT_GROUP_ID`,
+`python3 scripts/verify_exchange_runtime.py` generates both Exchange metadata
+variants for all four policies, validates the runtime pin, and redacts the group
+ID without publishing or changing `Cargo.toml`. The CI `exchange-metadata` job
+requires that repository secret and is explicitly skipped when it is unavailable
+(including fork PRs). `python3 scripts/flex_runtime_gate.py --exchange-metadata-only`
+requires and checks all eight generated metadata files. To run
 `cargo +1.89.0 test --test requests --locked --offline -- --test-threads=1`, first
 provision an authorized disposable registration in this policy's own ignored
 `tests/config` directory. Never reuse another policy's identity. Delete the remote
