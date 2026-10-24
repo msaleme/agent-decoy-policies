@@ -10,7 +10,9 @@ reviewer to refresh the listing.
 - **Name:** Decoy Coordinator
 - **Category:** **Security** (not `Other`) — matches `definition/gcl.yaml`
   (`category: Security`) and the three standalone decoy policies.
-- **Project type:** unified-model, subdirectory → `/tree/main/decoy-coordinator`
+- **Project type:** unified-model, subdirectory → `/tree/v0.1.0-rc.2/decoy-coordinator`
+  (`source_ref` = `v0.1.0-rc.2`; pin to a tag, not `main` — the reviewer asked the
+  governance listings to do the same)
 - **Classification:** MCP (single JSON-RPC envelope; batches rejected/skipped by mode)
 - **Direction:** inbound (auto-derived, non-editable)
 

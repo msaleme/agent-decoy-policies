@@ -1,7 +1,24 @@
 # Changelog
 
-## Unreleased
+## [v0.1.0-rc.2](https://github.com/msaleme/agent-decoy-policies/releases/tag/v0.1.0-rc.2) — 2026-10-24
 
+Second repository-wide source prerelease, cut so that P4A listings can be pinned to
+a tag instead of `main`. Includes Honeytoken Tripwire 1.0.0, Decoy Tool Sentinel
+1.0.0, Breadcrumb Misdirection 1.0.0 and Decoy Coordinator 0.1.0, built with Rust
+1.89.0 and PDK 1.10.0. Validated at `53201d7`: 125 Rust library tests (Honeytoken 43,
+Sentinel 25, Breadcrumb 14, Coordinator 43), 27 Python tests, strict Clippy and
+formatting, and four release WASM builds. `v0.1.0-rc.1` remains the citation anchor.
+No compiled assets, Exchange publication or P4A submission is part of this tag.
+
+- **All four policies (#67, #68):** generated implementation metadata now declares
+  `minRuntimeVersion: 1.14.0` (shared `scripts/set_min_flex_runtime.py`, run from
+  every Makefile, checked by `scripts/flex_runtime_gate.py`). On 1.12.1 the combined
+  response state can hang the response leg. Coordinator response detections emit
+  boolean-only `agent_decoy_detection` events, and response length mismatches have
+  their own telemetry.
+- **Docs (#50):** a false schema-drift report from MCP Schema Validation 1.3.0 when
+  the pinned schema has `additionalProperties: false` is isolated as host behavior,
+  independent of the Coordinator; #50 stays open pending the vendor.
 - **Decoy Coordinator** (third-party review at `c31500c`, #53–#57):
   - **Breaking (#54, #55):** requests are never rewritten. `breadcrumbMode: sanitize`
     now blocks a request breadcrumb exactly like `block` (in-band `-32008`), because
