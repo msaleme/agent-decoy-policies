@@ -50,6 +50,10 @@ async fn exercise(breadcrumb: &str) -> anyhow::Result<()> {
     let url = flex.external_url(8081).unwrap();
     let backend: HttpMock = composite.service()?;
     let server = MockServer::connect_async(backend.socket()).await;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()?;
+    wait_until_ready(&client, &url, &server).await?;
     let response = r#"{ "jsonrpc": "2.0", "id": 1, "result": { "tools": [ { "name": "safe", "description": "secret description with room" } ] } }"#;
     let upstream = server
         .mock_async(|when, then| {
@@ -66,9 +70,6 @@ async fn exercise(breadcrumb: &str) -> anyhow::Result<()> {
             then.status(500);
         })
         .await;
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(8))
-        .build()?;
     for body in [
         json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"admin"}}),
         json!({"jsonrpc":"2.0","id":"secret","method":"ping"}),
@@ -83,8 +84,21 @@ async fn exercise(breadcrumb: &str) -> anyhow::Result<()> {
             .body(body.to_string())
             .send()
             .await?;
-        assert!(reply.status() == 200 || reply.status() == 403);
-        assert!(!reply.text().await?.contains("secret"));
+        let status = reply.status();
+        let text = reply.text().await?;
+        assert!(
+            status == 200 || status == 403,
+            "unexpected status {} for {}: {}",
+            status,
+            body,
+            text
+        );
+        assert!(
+            !text.contains("secret"),
+            "honeytoken leaked for {}: {}",
+            body,
+            text
+        );
     }
     upstream.assert_hits_async(0).await;
     let body =
@@ -96,8 +110,14 @@ async fn exercise(breadcrumb: &str) -> anyhow::Result<()> {
         .body(body)
         .send()
         .await?;
-    assert_eq!(reply.status(), 200);
+    let status = reply.status();
     let output = reply.bytes().await?;
+    assert_eq!(
+        status,
+        200,
+        "clean tools/list body: {}",
+        String::from_utf8_lossy(&output)
+    );
     assert!(!String::from_utf8_lossy(&output).contains("secret"));
     if breadcrumb == "secret" {
         assert!(
@@ -115,6 +135,50 @@ async fn exercise(breadcrumb: &str) -> anyhow::Result<()> {
     upstream.assert_hits_async(1).await;
     unexpected.assert_hits_async(0).await;
     Ok(())
+}
+/// Poll a clean request until Flex and the mock backend both serve it (#72). A cold host can
+/// answer 5xx (or refuse the connection) for the first requests; the block-loop assertions accept
+/// 403, so without this wait an unready gateway only surfaced at the clean `tools/list` check.
+/// Ready means the probe reached the backend: a blocked request with an id is denied with HTTP 200
+/// and a JSON-RPC error, so status alone is not enough. The probe has its own mock, deleted before
+/// the test's mocks are registered.
+async fn wait_until_ready(
+    client: &reqwest::Client,
+    url: &str,
+    server: &MockServer,
+) -> anyhow::Result<()> {
+    let probe = server
+        .mock_async(|when, then| {
+            when.body_contains("\"note\":\"readiness\"");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(r#"{"jsonrpc":"2.0","id":0,"result":{}}"#);
+        })
+        .await;
+    let body = json!({"jsonrpc":"2.0","id":0,"method":"ping","params":{"note":"readiness"}});
+    let mut last = String::from("no attempt");
+    for _ in 0..30 {
+        match client
+            .post(url)
+            .header("content-type", "application/json")
+            .body(body.to_string())
+            .send()
+            .await
+        {
+            Ok(reply) => {
+                let status = reply.status();
+                let text = reply.text().await.unwrap_or_default();
+                if status == 200 && probe.hits_async().await > 0 {
+                    probe.delete_async().await;
+                    return Ok(());
+                }
+                last = format!("{} {}", status, text);
+            }
+            Err(err) => last = err.to_string(),
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+    anyhow::bail!("gateway not ready after 30 attempts; last: {}", last)
 }
 #[pdk_test]
 async fn original_detectors_and_final_seed_rescan() -> anyhow::Result<()> {
